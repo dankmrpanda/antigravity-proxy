@@ -43,10 +43,9 @@ jobs:
       - name: Type-check
         run: npm run typecheck
 
-      - name: Run tests with timeout
+      - name: Run tests
         shell: bash
-        run: |
-          timeout 120 npm test
+        run: npm test
         timeout-minutes: 3
 
       - name: Build (compiled output)
