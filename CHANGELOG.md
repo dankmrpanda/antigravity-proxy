@@ -6,6 +6,26 @@ Dates are UTC. Commit hashes are the actual merge commits on `main`.
 
 ---
 
+## [1.0.7] — 2026-07-04
+
+### Fixed
+
+- **Image content handling** — fixed malformed content array construction in mapper.ts; images now produce proper `{ type: 'text' }` + `{ type: 'image_url' }` parts instead of broken wrapping
+- **Per-model routing** — router now uses `_default_provider` when no per-model config exists, instead of trying every provider in the priority chain
+- **Variant name resolution** — added reverse lookup so shortened Antigravity model names (e.g., `gemini-3-flash-agent`) correctly map to parent model config (`gemini-3.5-flash`)
+- **Adapter text parts** — OpenAI, Anthropic, and Google adapters now recognize `{ type: 'text' }` objects in content arrays
+
+### Changed
+
+- **Dashboard variant mapping** — model card variants now use Antigravity's actual model names (`gemini-3.5-flash-extra-low`, `gemini-3.5-flash-low`, `gemini-3-flash-agent`) while displaying user-friendly labels (Low, Medium, High)
+- **Dashboard main model disabled** — when variants are configured, the main model field is disabled with a hint to configure variants below
+
+### Added
+
+- **Missing Part fields** — added `type`, `thought`, `image`, `image_url`, `fileData` to Part interface in types.ts
+
+---
+
 ## [1.0.3] — 2026-06-29
 
 ### Added

@@ -1612,7 +1612,7 @@ function renderPriorityChain() {
 }
 
 const MODEL_GROUPS = [
-  { alias: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash', category: 'Google Gemini', color: '#4285f4', logo: 'https://cdn.jsdelivr.net/npm/simple-icons@latest/icons/googlegemini.svg', logoMask: true, variants: ['gemini-3.5-flash-medium', 'gemini-3.5-flash-low', 'gemini-3.5-flash-high'], variantLabels: ['Medium', 'Low', 'High'] },
+  { alias: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash', category: 'Google Gemini', color: '#4285f4', logo: 'https://cdn.jsdelivr.net/npm/simple-icons@latest/icons/googlegemini.svg', logoMask: true, variants: ['gemini-3.5-flash-extra-low', 'gemini-3.5-flash-low', 'gemini-3-flash-agent'], variantLabels: ['Low', 'Medium', 'High'] },
   { alias: 'gemini-3.1-pro', label: 'Gemini 3.1 Pro', category: 'Google Gemini', color: '#4285f4', logo: 'https://cdn.jsdelivr.net/npm/simple-icons@latest/icons/googlegemini.svg', logoMask: true, variants: ['gemini-3.1-pro-low', 'gemini-3.1-pro-high'], variantLabels: ['Low', 'High'] },
   { alias: 'claude-sonnet-4-6-thinking', label: 'Claude Sonnet 4.6', category: 'Anthropic', color: '#d97757', logo: 'https://cdn.jsdelivr.net/npm/simple-icons@latest/icons/anthropic.svg', logoMask: true, variants: [], variantLabels: [] },
   { alias: 'claude-opus-4-6-thinking', label: 'Claude Opus 4.6', category: 'Anthropic', color: '#d97757', logo: 'https://cdn.jsdelivr.net/npm/simple-icons@latest/icons/anthropic.svg', logoMask: true, variants: [], variantLabels: [] },
@@ -1624,13 +1624,24 @@ function renderModelCards() {
   if (!grid) return;
   const pm = _modelConfig?._provider_models || {};
 
+  // Track which models have variants configured (to disable main model)
+  const variantConfigured = {};
+  MODEL_GROUPS.forEach(group => {
+    if (group.variants.length > 0) {
+      const hasVariantConfig = group.variants.some(v => pm[v] && Object.keys(pm[v]).length > 0);
+      variantConfigured[group.alias] = hasVariantConfig;
+    }
+  });
+
   grid.innerHTML = MODEL_GROUPS.map(group => {
     const perProvider = pm[group.alias] || {};
     const firstProvider = Object.keys(perProvider)[0] || '';
     const firstModel = perProvider[firstProvider] || '';
+    const hasVariants = group.variants.length > 0;
+    const variantsDisabled = variantConfigured[group.alias];
 
     let variantsHtml = '';
-    if (group.variants.length > 0) {
+    if (hasVariants) {
       variantsHtml = `<div class="model-card-variants">
         <div class="variant-label">Variants</div>
         ${group.variants.map((v, vi) => {
@@ -1654,6 +1665,13 @@ function renderModelCards() {
         : `<img src="${group.logo}" style="width:28px;height:28px;border-radius:6px;flex-shrink:0" onerror="this.style.display='none'">`)
       : `<div class="model-card-icon" style="background:${group.color}18;color:${group.color}">${group.icon || ''}</div>`;
 
+    const mainDisabled = hasVariants && variantsDisabled;
+    const mainHint = hasVariants
+      ? (variantsDisabled
+        ? '<span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text3)"> (variants configured — main model disabled)</span>'
+        : '<span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text3)"> (click to select, dbl-click to edit)</span>')
+      : '<span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text3)">(click to select, dbl-click to edit)</span>';
+
     return `<div class="model-card" data-alias="${esc(group.alias)}">
       <div class="model-card-header">
         ${logoHtml}
@@ -1662,12 +1680,12 @@ function renderModelCards() {
       </div>
       <div class="model-card-body">
         <div class="model-card-field">
-          <label>Provider</label>
-          <div id="prov_${group.alias}" style="min-width:0"></div>
+          <label>Provider${mainDisabled ? ' <span style="color:var(--text3)">(disabled)</span>' : ''}</label>
+          <div id="prov_${group.alias}" style="min-width:0;${mainDisabled ? 'opacity:0.5;pointer-events:none' : ''}"></div>
         </div>
         <div class="model-card-field">
-          <label>Model Name <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--text3)">(click to select, dbl-click to edit)</span></label>
-          <div id="model_${group.alias}" style="min-width:0"></div>
+          <label>Model Name ${mainHint}</label>
+          <div id="model_${group.alias}" style="min-width:0;${mainDisabled ? 'opacity:0.5;pointer-events:none' : ''}"></div>
         </div>
         ${variantsHtml}
       </div>
@@ -1679,18 +1697,29 @@ function renderModelCards() {
     const perProvider = pm[group.alias] || {};
     const primaryProv = Object.keys(perProvider)[0] || '';
     const primaryModel = perProvider[primaryProv] || '';
+    const hasVariants = group.variants.length > 0;
+    const variantsDisabled = variantConfigured[group.alias];
 
-    attachModelField('model_' + group.alias, group.alias, primaryProv, primaryModel);
-    attachProviderField('prov_' + group.alias, group.alias, primaryProv, (newProv) => {
-      const pm2 = _modelConfig._provider_models || {};
-      if (!pm2[group.alias]) pm2[group.alias] = {};
-      const oldModel = pm2[group.alias][primaryProv] || '';
-      pm2[group.alias] = {};
-      pm2[group.alias][newProv] = oldModel || '';
-      _modelConfig._provider_models = pm2;
-      attachModelField('model_' + group.alias, group.alias, newProv, oldModel || '');
-      renderUtilityModels();
-    });
+    // Only attach main model fields if no variants are configured
+    if (!variantsDisabled) {
+      attachModelField('model_' + group.alias, group.alias, primaryProv, primaryModel);
+      attachProviderField('prov_' + group.alias, group.alias, primaryProv, (newProv) => {
+        const pm2 = _modelConfig._provider_models || {};
+        if (!pm2[group.alias]) pm2[group.alias] = {};
+        const oldModel = pm2[group.alias][primaryProv] || '';
+        pm2[group.alias] = {};
+        pm2[group.alias][newProv] = oldModel || '';
+        _modelConfig._provider_models = pm2;
+        attachModelField('model_' + group.alias, group.alias, newProv, oldModel || '');
+        renderUtilityModels();
+      });
+    } else {
+      // Clear the containers when disabled
+      const provEl = document.getElementById('prov_' + group.alias);
+      const modelEl = document.getElementById('model_' + group.alias);
+      if (provEl) provEl.innerHTML = '<span style="color:var(--text3);font-size:12px">Configure variants below</span>';
+      if (modelEl) modelEl.innerHTML = '<span style="color:var(--text3);font-size:12px">Configure variants below</span>';
+    }
 
     group.variants.forEach(v => {
       const vPerProvider = pm[v] || {};
@@ -1706,6 +1735,8 @@ function renderModelCards() {
         _modelConfig._provider_models = pm2;
         attachModelField('model_' + v, v, newProv, oldModel || '');
         renderUtilityModels();
+        // Re-render to update main model disabled state
+        renderModelCards();
       });
     });
   });

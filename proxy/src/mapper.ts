@@ -1,14 +1,21 @@
 import type { Content, Part, Tool, GenerationConfig } from './types.js';
 import { logger } from './logger.js';
 
+export interface OpenAITextPart {
+  type: 'text';
+  text: string;
+}
+
 export interface OpenAIImagePart {
   type: 'image_url';
   image_url: { url: string; detail?: 'auto' | 'low' | 'high' };
 }
 
+export type OpenAIContentPart = OpenAITextPart | OpenAIImagePart;
+
 export interface OpenAIMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string | OpenAIImagePart[] | null;
+  content: string | OpenAIContentPart[] | null;
   reasoning_content?: string;
   tool_calls?: Array<{
     id: string;
@@ -142,10 +149,12 @@ export function mapContentsToMessages(contents: Content[], systemInstruction?: s
         messages.push({ role: 'tool', tool_call_id: id, content: contentStr });
       }
     } else if (imageParts.length > 0) {
-      const content: OpenAIImagePart[] = textParts
-        ? [{ type: 'image_url' as const, image_url: { url: textParts } } as any, ...imageParts]
-        : imageParts;
-      messages.push({ role, content: content.length === 1 && content[0].image_url.url === textParts ? textParts : content });
+      const content: OpenAIContentPart[] = [];
+      if (textParts) {
+        content.push({ type: 'text', text: textParts });
+      }
+      content.push(...imageParts);
+      messages.push({ role, content: content.length === 1 && content[0].type === 'text' ? (content[0] as OpenAITextPart).text : content });
     } else {
       messages.push({ role, content: textParts, reasoning_content: thoughtParts || undefined });
     }

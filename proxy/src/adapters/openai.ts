@@ -240,6 +240,9 @@ export class OpenAICompatAdapter implements ModelAdapter {
             const u = part.image_url.url;
             if (!/^(https?:|data:|file:)/i.test(u)) return null;
           }
+          if (part && part.type === 'text' && typeof part.text === 'string') {
+            return { type: 'text', text: part.text };
+          }
           return part;
         }).filter(Boolean);
         out.content = cleaned.length === 0 ? '' : cleaned;

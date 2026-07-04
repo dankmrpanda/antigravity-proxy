@@ -185,9 +185,11 @@ export class AnthropicAdapter implements ModelAdapter {
               const m2 = url.match(/^data:([^;]+);base64,(.+)$/);
               if (m2) {
                 blocks.push({ type: 'image', source: { type: 'base64', media_type: m2[1], data: m2[2] } });
-              } else {
+              } else if (/^(https?:|file:)/i.test(url)) {
                 blocks.push({ type: 'image', source: { type: 'url', url } });
               }
+            } else if (p.type === 'text' && p.text) {
+              blocks.push({ type: 'text', text: p.text });
             } else if (typeof p === 'string') {
               blocks.push({ type: 'text', text: p });
             }

@@ -74,10 +74,14 @@ export class Router {
       const modelProviders = this.modelResolver.getProvidersForModel(model);
       if (modelProviders && modelProviders.length > 0) {
         candidates = [modelProviders[0] as ProviderId];
-      } else if (this.modelResolver.defaultProvider && this.modelResolver.defaultModel) {
-        candidates = [this.modelResolver.defaultProvider];
       } else {
-        candidates = providerIds;
+        // No per-model config — use default provider if available,
+        // otherwise fall through to the full priority chain
+        if (this.modelResolver.defaultProvider) {
+          candidates = [this.modelResolver.defaultProvider];
+        } else {
+          candidates = providerIds;
+        }
       }
     } else {
       candidates = providerIds;
@@ -110,12 +114,36 @@ export class Router {
 
       let resolvedModel = this.modelResolver.resolve(model, providerId);
       if (!resolvedModel || resolvedModel === model) {
-        // Use provider-specific default first, then global default
-        const providerDefault = this.modelResolver.getDefaultModel(providerId);
-        if (providerDefault) {
-          resolvedModel = providerDefault;
-        } else if (this.modelResolver.defaultModel) {
-          resolvedModel = this.modelResolver.defaultModel;
+        // resolve() is a name-translator — when it returns the model unchanged,
+        // check the provider map directly for an explicit per-model override.
+        // Only fall back to provider/global defaults if NO per-model mapping exists.
+        const providerMap = this.modelResolver.getProviderMap();
+        const short = model.replace(/^models\//, '');
+        const explicitMapping = providerMap[model]?.[providerId]
+          || providerMap[short]?.[providerId];
+        if (explicitMapping) {
+          resolvedModel = explicitMapping;
+        } else {
+          // Reverse lookup: model starts with config key OR config key starts with model
+          let parentKey: string | null = null;
+          for (const key of Object.keys(providerMap)) {
+            if (key === 'default' || key === short) continue;
+            if (short.startsWith(key + '-') || key.startsWith(short + '-')) {
+              parentKey = key;
+              break;
+            }
+          }
+          const parentMapping = parentKey ? providerMap[parentKey]?.[providerId] : undefined;
+          if (parentMapping) {
+            resolvedModel = parentMapping;
+          } else {
+            const providerDefault = this.modelResolver.getDefaultModel(providerId);
+            if (providerDefault) {
+              resolvedModel = providerDefault;
+            } else if (this.modelResolver.defaultModel) {
+              resolvedModel = this.modelResolver.defaultModel;
+            }
+          }
         }
       }
       logger.info(`[router] Trying ${providerId} → ${resolvedModel} (from ${model})`);
@@ -170,14 +198,11 @@ export class Router {
       }
     }
 
-    // Second pass: all explicit/candidate providers failed and nothing streamed.
-    // Fall back to the global provider priority (excluding ones we already tried)
-    // using the model resolver's default mapping for each provider.
+    // Second pass (A6): the first-pass candidate failed.
+    // Fall back to remaining providers in the priority chain (excluding ones we already tried).
     //
-    // A6 clarification: this filter (global providerIds minus `tried`) effectively
-    // becomes `global - whitelist` after the first pass exhausts the model's
-    // whitelist, which is the intended semantics — try whitelist providers first,
-    // then fall back to any non-whitelist provider if the whitelist is broken.
+    // In per-model-per-provider mode with no per-model config, `tried` contains
+    // just the default provider, so `fallback` becomes the rest of the priority chain.
     // If you want to disable the global fallback (strict whitelist), set
     // DISABLE_GLOBAL_FALLBACK=1 in the environment.
     const fallback = providerIds.filter(id => !tried.has(id) && this.adapters.has(id));
@@ -190,11 +215,43 @@ export class Router {
         if (!adapter) continue;
         let resolvedModel = this.modelResolver.resolve(model, providerId);
         if (!resolvedModel || resolvedModel === model) {
-          const providerDefault = this.modelResolver.getDefaultModel(providerId);
-          if (providerDefault) {
-            resolvedModel = providerDefault;
-          } else if (this.modelResolver.defaultModel) {
-            resolvedModel = this.modelResolver.defaultModel;
+          const providerMap = this.modelResolver.getProviderMap();
+          const short = model.replace(/^models\//, '');
+          const explicitMapping = providerMap[model]?.[providerId]
+            || providerMap[short]?.[providerId];
+          if (explicitMapping) {
+            resolvedModel = explicitMapping;
+          } else {
+            // Reverse lookup: check if model starts with any config key
+            // OR if a config key starts with the model
+            let parentKey: string | null = null;
+            for (const key of Object.keys(providerMap)) {
+              if (key === 'default' || key === short) continue;
+              if (short.startsWith(key + '-') || short.startsWith(key)) {
+                parentKey = key;
+                break;
+              }
+            }
+            if (!parentKey) {
+              for (const key of Object.keys(providerMap)) {
+                if (key === 'default' || key === short) continue;
+                if (key.startsWith(short + '-') || key.startsWith(short)) {
+                  parentKey = key;
+                  break;
+                }
+              }
+            }
+            const parentMapping = parentKey ? providerMap[parentKey]?.[providerId] : undefined;
+            if (parentMapping) {
+              resolvedModel = parentMapping;
+            } else {
+              const providerDefault = this.modelResolver.getDefaultModel(providerId);
+              if (providerDefault) {
+                resolvedModel = providerDefault;
+              } else if (this.modelResolver.defaultModel) {
+                resolvedModel = this.modelResolver.defaultModel;
+              }
+            }
           }
         }
         logger.info(`[router] Fallback trying ${providerId} → ${resolvedModel} (from ${model})`);

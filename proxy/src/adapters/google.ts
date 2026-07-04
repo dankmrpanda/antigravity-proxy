@@ -148,6 +148,8 @@ export class GoogleAdapter implements ModelAdapter {
             } else {
               parts.push({ fileData: { fileUri: url, mimeType: 'image/jpeg' } });
             }
+          } else if (p.type === 'text' && p.text) {
+            parts.push({ text: p.text });
           } else if (typeof p === 'string') {
             parts.push({ text: p });
           }

@@ -82,8 +82,11 @@ export class ModelResolver {
     if (providerId && this.providerMap[model]?.[providerId]) {
       return this.providerMap[model][providerId];
     }
-    if (this.flatMap[model]) return this.flatMap[model];
     const short = model.replace(/^models\//, '');
+    if (short !== model && providerId && this.providerMap[short]?.[providerId]) {
+      return this.providerMap[short][providerId];
+    }
+    if (this.flatMap[model]) return this.flatMap[model];
     if (this.flatMap[short]) return this.flatMap[short];
     for (const key of Object.keys(this.flatMap)) {
       if (key === 'default') continue;
@@ -109,19 +112,31 @@ export class ModelResolver {
       const primaryProviders = this.providerMap[primary];
       if (primaryProviders) return Object.keys(primaryProviders);
     }
+    // Reverse lookup: model starts with config key (e.g., "gemini-3.5-flash-extra-low" → "gemini-3.5-flash")
+    // OR config key starts with model (e.g., "gemini-3-flash" → "gemini-3.5-flash")
+    // Exact match above already catches exact variant names, so this only runs for unmatched names.
+    for (const key of Object.keys(this.providerMap)) {
+      if (key === 'default' || key === short) continue;
+      if (short.startsWith(key + '-') || key.startsWith(short + '-')) {
+        const keyProviders = this.providerMap[key];
+        if (keyProviders) return Object.keys(keyProviders);
+      }
+    }
     return null;
   }
 
   private findPrimaryModel(model: string): string | null {
     for (const key of Object.keys(this.providerMap)) {
       if (key === 'default' || key === model) continue;
-      if (model.startsWith(key + '-')) return key;
+      // Config key "claude-sonnet-4-6-thinking" should match model "claude-sonnet-4-6"
+      // because the key starts with the model + "-" (the key is a longer variant).
+      if (key.startsWith(model + '-')) return key;
     }
     const stripped = model.replace(/-thinking$/, '');
     if (stripped !== model && this.providerMap[stripped]) return stripped;
     for (const key of Object.keys(this.providerMap)) {
       if (key === 'default' || key === stripped) continue;
-      if (stripped.startsWith(key + '-')) return key;
+      if (key.startsWith(stripped + '-')) return key;
     }
     return null;
   }

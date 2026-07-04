@@ -6,9 +6,14 @@ export interface Content {
 
 export interface Part {
   text?: string;
+  type?: string;
+  thought?: boolean;
   functionCall?: FunctionCall;
   functionResponse?: FunctionResponse;
   inlineData?: { mimeType: string; data: string };
+  image?: string;
+  image_url?: { url: string };
+  fileData?: { fileUri: string; mimeType: string };
 }
 
 export interface FunctionCall {

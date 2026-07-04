@@ -6,7 +6,6 @@ import { ANTIGRAVITY_CONTEXT } from './antigravity-context.js';
 import { registerBuiltinPlugins } from './plugins/builtin-plugins.js';
 import { toolCapabilityRegistry } from './tool-capabilities.js';
 import { normalizeToolCall } from './tool-normalizer.js';
-import { injectContext } from './context-injector.js';
 import type { MappedRequest } from './mapper.js';
 import type { OpenAIMessage } from './mapper.js';
 
