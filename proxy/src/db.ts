@@ -2,17 +2,20 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'node:module';
+import { migrateUserData, USER_DB_DIR, USER_DB_PATH } from './data-paths.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+migrateUserData();
 
 // Try to load better-sqlite3. If the native module isn't compiled
 // (e.g. CI with --ignore-scripts on Windows), all DB functions become
 // no-ops so the rest of the app can still load without crashing.
 let db: any = null;
 try {
-  const dbDir = path.resolve(__dirname, '..', 'data');
+  const dbDir = USER_DB_DIR;
   if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
-  const dbPath = path.join(dbDir, 'proxy.db');
+  const dbPath = USER_DB_PATH;
   // @ts-ignore - better-sqlite3 types conflict with ESM declaration emit
   const _require = createRequire(import.meta.url);
   const Database = _require('better-sqlite3');

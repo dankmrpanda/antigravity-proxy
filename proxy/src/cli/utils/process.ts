@@ -3,8 +3,9 @@ import path from 'path';
 import { spawn, execSync } from 'child_process';
 import { platform } from 'os';
 import { PROXY_DIR } from './paths.js';
+import { USER_DATA_DIR } from '../../data-paths.js';
 
-const PID_DIR = path.join(process.env.HOME || process.env.USERPROFILE || '.', '.antigravity');
+const PID_DIR = USER_DATA_DIR;
 const PID_FILE = path.join(PID_DIR, 'proxy.pid');
 
 function ensurePidDir(): void {
@@ -94,14 +95,16 @@ export function stopProxy(): boolean {
 
   try {
     if (platform() === 'win32') {
-      execSync(`taskkill /F /PID ${pid} 2>nul`, { stdio: 'ignore', timeout: 5000 });
+      execSync(`taskkill /F /PID ${pid} 2>nul`, { stdio: 'ignore', timeout: 3000 });
     } else {
       process.kill(pid, 'SIGTERM');
     }
-  } catch {}
-
-  try { fs.unlinkSync(PID_FILE); } catch {}
-  return true;
+    try { fs.unlinkSync(PID_FILE); } catch {}
+    return true;
+  } catch {
+    try { fs.unlinkSync(PID_FILE); } catch {}
+    return true;
+  }
 }
 
 export function waitForHealth(apiPort: number, timeoutMs = 15000): Promise<boolean> {

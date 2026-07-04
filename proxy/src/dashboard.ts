@@ -26,8 +26,23 @@ import {
 } from './reasoning-effort.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dashboardHtml = path.resolve(__dirname, '..', 'dashboard', 'index.html');
-const loginHtml = path.resolve(__dirname, '..', 'dashboard', 'login.html');
+
+function findDashboardDir(): string {
+  const candidates = [
+    path.resolve(__dirname, '..', 'dashboard'),
+    path.resolve(__dirname, 'dashboard'),
+    path.resolve(process.cwd(), 'dashboard'),
+    path.resolve(process.cwd(), 'proxy', 'dashboard'),
+  ];
+  for (const dir of candidates) {
+    if (fs.existsSync(path.join(dir, 'index.html'))) return dir;
+  }
+  return candidates[0];
+}
+
+const dashboardDir = findDashboardDir();
+const dashboardHtml = path.join(dashboardDir, 'index.html');
+const loginHtml = path.join(dashboardDir, 'login.html');
 const logDir = path.resolve(__dirname, '..', 'logs');
 const MAX_BODY_SIZE = 1024 * 1024; // 1MB limit for dashboard POST bodies
 
@@ -273,7 +288,6 @@ export function createDashboardHandler(): (req: http.IncomingMessage, res: http.
     const publicPaths = new Set(['/login', '/login.html']);
 
     // Serve static dashboard files (CSS, JS, images) — public, no auth required
-    const dashboardDir = path.resolve(__dirname, '..', 'dashboard');
     const staticExts: Record<string, string> = {
       '.css': 'text/css; charset=utf-8',
       '.js': 'text/javascript; charset=utf-8',

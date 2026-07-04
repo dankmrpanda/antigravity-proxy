@@ -2,50 +2,20 @@ import fs from 'fs';
 import path from 'path';
 import { execSync, spawn, exec } from 'child_process';
 import { platform } from 'os';
-import { certExists, generateCerts, trustCert, isAdmin } from '../utils/cert.js';
+import { certExists, generateCerts, trustCert } from '../utils/cert.js';
 import { killProcessesOnPorts } from '../utils/port.js';
 import { startProxy, isProxyRunning, waitForHealth } from '../utils/process.js';
 import { openUrl } from '../utils/open.js';
 import { PROXY_DIR } from '../utils/paths.js';
 import { checkAndPromptUpdate } from '../utils/update-check.js';
+import chalk from 'chalk';
+import { section, ok, fail, warn, info, header, startSpinner, succeedSpinner, failSpinner, warnSpinner, arrow, error } from '../ui.js';
 
 interface StartOptions {
   port?: string;
   browser?: boolean;
   foreground?: boolean;
   trustCert?: boolean;
-}
-
-function promptForAdmin(): boolean {
-  if (platform() !== 'win32') return false;
-  if (isAdmin()) return true;
-
-  console.log('');
-  console.log('  !! Administrator privileges required for port 443.');
-
-  // Try to elevate: restart this CLI as admin in a new terminal window
-  // The original terminal stays alive with a message.
-  try {
-    const cliPath = process.argv[1] || path.join(PROXY_DIR, 'bin', 'cli.js');
-    const nodeExe = process.execPath; // Full path to node.exe
-    const args = process.argv.slice(2).map(a => `'${a}'`).join(' ');
-
-    // Start elevated process in a new CMD window that stays open
-    const cmd = `cmd /k "cd /d "${PROXY_DIR}" && "${nodeExe}" "${cliPath}" start ${args}"`;
-    execSync(
-      `powershell -NoProfile -Command "Start-Process cmd -ArgumentList '/k cd /d ${PROXY_DIR} && ${nodeExe} ${cliPath} start ${args}' -Verb RunAs"`,
-      { stdio: 'ignore', timeout: 10000 }
-    );
-
-    console.log('');
-    console.log('  >> Proxy started in Administrator terminal.');
-    console.log('  >> You can close this window.');
-    console.log('');
-    return true; // Don't exit — let user close manually
-  } catch {
-    console.log('  !! Could not elevate. Run this terminal as Administrator.');
-    return false;
-  }
 }
 
 function launchAntigravityDesktop(): boolean {
@@ -104,75 +74,75 @@ export async function startCommand(opts: StartOptions): Promise<void> {
   const proxyPort = parseInt(opts.port || '443', 10);
   const apiPort = 4000;
 
-  console.log('\n==> Checking prerequisites');
+  header('Antigravity Proxy', `v${JSON.parse(fs.readFileSync(path.join(PROXY_DIR, 'package.json'), 'utf-8')).version}`);
+
+  section('Checking prerequisites');
 
   const nodeVersion = process.version;
   const major = parseInt(nodeVersion.slice(1), 10);
   if (major < 20) {
-    console.error(`  XX Node.js 20+ required (found ${nodeVersion})`);
+    fail(`Node.js 20+ required (found ${nodeVersion})`);
     process.exit(1);
   }
-  console.log(`  OK Node.js ${nodeVersion}`);
+  console.log(`  ${ok(`Node.js ${nodeVersion}`)}`);
 
-  // Check for updates (non-blocking, continues after brief pause)
+  const updateSpinner = startSpinner('Checking for updates');
   try {
     const pkgPath = path.join(PROXY_DIR, 'package.json');
     const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
     checkAndPromptUpdate(pkg.version);
+    succeedSpinner(updateSpinner);
   } catch {
-    // Skip update check if package.json can't be read
+    succeedSpinner(updateSpinner);
   }
 
-  // Admin check for port 443 on Windows
-  if (proxyPort === 443 && platform() === 'win32' && !isAdmin()) {
-    console.log('\n==> Checking Administrator privileges');
-    const elevated = promptForAdmin();
-    if (elevated) {
-      // Elevated process is starting in a new terminal. Exit this one.
-      return;
-    }
-    console.log('  !! Continuing without Admin — port 443 may fail.');
-    console.log('  !! Tip: Use --port 8443 to run without Admin.');
-  }
-
+  section('Setting up environment');
+  const depSpinner = startSpinner('Checking dependencies');
   const nodeModules = path.join(PROXY_DIR, 'node_modules');
-  if (!fs.existsSync(nodeModules)) {
-    console.log('  Installing dependencies...');
-    execSync('npm install --production', { cwd: PROXY_DIR, stdio: 'inherit', timeout: 120000 });
+  if (!fs.existsSync(nodeModules) && !fs.existsSync(path.join(PROXY_DIR, 'dist', 'index.js'))) {
+    depSpinner.text = 'Installing dependencies...';
+    execSync('npm install --production', { cwd: PROXY_DIR, stdio: 'pipe', timeout: 120000 });
+    succeedSpinner(depSpinner, 'Dependencies installed');
+  } else {
+    succeedSpinner(depSpinner, 'Dependencies ready');
   }
 
+  const certSpinner = startSpinner('Setting up TLS certificates');
   if (!certExists()) {
-    console.log('\n==> Generating TLS certificates');
     generateCerts();
+    succeedSpinner(certSpinner, 'TLS certificates generated');
+  } else {
+    succeedSpinner(certSpinner, 'TLS certificates ready');
   }
-  console.log('  OK TLS certificates ready');
 
-  // Auto-trust certificate on first run (or if --trust-cert flag is set)
+  const certTrustSpinner = startSpinner('Trusting TLS certificate');
   const certTrustedMarker = path.join(PROXY_DIR, 'certs', '.trusted');
   const shouldTrust = opts.trustCert || !fs.existsSync(certTrustedMarker);
   if (shouldTrust) {
     try {
-      console.log('\n==> Trusting TLS certificate');
       trustCert();
       fs.writeFileSync(certTrustedMarker, new Date().toISOString());
+      succeedSpinner(certTrustSpinner, 'Certificate trusted');
     } catch (e: any) {
-      console.warn(`  !! ${e.message}`);
-      console.log('  !! You may need to trust the cert manually. Run: antigravity certs trust');
+      warnSpinner(certTrustSpinner, `Certificate not auto-trusted: ${e.message}`);
+      console.log(`  ${info('Run: antigravity certs trust')}`);
     }
+  } else {
+    succeedSpinner(certTrustSpinner, 'Certificate already trusted');
   }
 
-  console.log('\n==> Checking for old proxy processes');
+  section('Clearing old processes');
   const portsToCheck = [443, 8443, apiPort];
   if (!portsToCheck.includes(proxyPort)) portsToCheck.push(proxyPort);
   killProcessesOnPorts(portsToCheck);
-  console.log('  OK Ports cleared');
+  console.log(`  ${ok('Ports cleared')}`);
 
-  const envPath = path.join(PROXY_DIR, '.env');
-  const envExample = path.join(PROXY_DIR, '.env.example');
+  const envDir = PROXY_DIR;
+  const envPath = path.join(envDir, '.env');
+  const envExample = path.join(envDir, '.env.example');
   if (!fs.existsSync(envPath) && fs.existsSync(envExample)) {
-    console.log('\n==> Creating .env from template');
     fs.copyFileSync(envExample, envPath);
-    console.log(`  !! Created ${envPath} — add your API keys before using the proxy.`);
+    console.log(`  ${warn('.env created from template — add API keys in dashboard Config tab')}`);
   }
 
   const logsDir = path.join(PROXY_DIR, 'logs');
@@ -182,68 +152,69 @@ export async function startCommand(opts: StartOptions): Promise<void> {
 
   const distDir = path.join(PROXY_DIR, 'dist');
   if (!fs.existsSync(distDir)) {
-    console.log('\n==> Building TypeScript');
+    const buildSpinner = startSpinner('Building TypeScript');
     try {
-      execSync('npx tsc', { cwd: PROXY_DIR, stdio: 'inherit', timeout: 60000 });
+      execSync('npx tsc', { cwd: PROXY_DIR, stdio: 'pipe', timeout: 60000 });
+      succeedSpinner(buildSpinner, 'TypeScript compiled');
     } catch {
-      console.log('  !! Build failed, will run in dev mode with tsx');
+      warnSpinner(buildSpinner, 'Build failed, running in dev mode with tsx');
     }
   }
 
   if (isProxyRunning()) {
-    console.log('  !! Proxy already running. Use `antigravity stop` first.');
+    error('Proxy already running. Use `antigravity stop` first.');
     process.exit(1);
   }
 
-  // Foreground mode: launch desktop first, then run proxy inline
+  section('Starting proxy');
+
   if (opts.foreground) {
-    console.log('\n==> Launching Antigravity');
+    console.log(`  ${arrow('Launching Antigravity desktop')}`);
     if (launchAntigravityDesktop()) {
-      console.log('  OK Antigravity launched');
+      console.log(`  ${ok('Antigravity launched')}`);
     } else {
-      console.log('  !! Antigravity not found — launch it manually');
+      console.log(`  ${warn('Antigravity not found — launch it manually')}`);
     }
 
-    console.log('\n==> Starting proxy (foreground)');
+    console.log(`  ${arrow('Starting proxy in foreground')}`);
     startProxy({ proxyPort, apiPort, foreground: true });
     return;
   }
 
-  // Background mode: start proxy, wait for health, then launch desktop + browser
-  console.log('\n==> Starting proxy');
+  const proxySpinner = startSpinner('Starting proxy');
   const pid = startProxy({ proxyPort, apiPort, foreground: false });
   if (pid) {
-    console.log(`  OK Proxy started (PID ${pid})`);
+    succeedSpinner(proxySpinner, `Proxy started (PID ${pid})`);
   } else {
-    console.error('  XX Failed to start proxy');
+    failSpinner(proxySpinner, 'Failed to start proxy');
     process.exit(1);
   }
 
-  console.log('\n==> Waiting for dashboard...');
+  const healthSpinner = startSpinner('Waiting for dashboard');
   const healthy = await waitForHealth(apiPort);
   if (healthy) {
-    console.log(`  OK Dashboard ready at http://localhost:${apiPort}`);
+    succeedSpinner(healthSpinner, 'Dashboard ready');
   } else {
-    console.warn('  !! Dashboard not yet responding — check logs');
+    warnSpinner(healthSpinner, 'Dashboard not yet responding — check logs');
   }
 
   if (opts.browser !== false) {
-    console.log('\n==> Opening dashboard');
     openUrl(`http://localhost:${apiPort}`);
   }
 
-  console.log('\n==> Launching Antigravity');
+  console.log(`  ${arrow('Launching Antigravity desktop')}`);
   if (launchAntigravityDesktop()) {
-    console.log('  OK Antigravity launched');
+    console.log(`  ${ok('Antigravity launched')}`);
   } else {
-    console.log('  !! Antigravity not found — launch it manually');
+    console.log(`  ${warn('Antigravity not found — launch it manually')}`);
   }
 
-  console.log('\n==> Ready!');
-  console.log(`  Dashboard:  http://localhost:${apiPort}`);
-  console.log(`  TLS Proxy:  https://localhost:${proxyPort}`);
   console.log('');
-  console.log('  Configure providers and API keys from the dashboard Config tab.');
-  console.log('  Run `antigravity stop` to stop everything.');
-  console.log('  Run `antigravity start --foreground` to see live logs.');
+  console.log(`  ${chalk.bold.green('✓ Ready!')}`);
+  console.log(`  ${info(`Dashboard:  http://localhost:${apiPort}`)}`);
+  console.log(`  ${info(`TLS Proxy:  https://localhost:${proxyPort}`)}`);
+  console.log('');
+  console.log(`  ${chalk.dim('Configure providers and API keys from the dashboard Config tab.')}`);
+  console.log(`  ${chalk.dim('Run')} ${chalk.cyan('antigravity stop')} ${chalk.dim('to stop everything.')}`);
+  console.log(`  ${chalk.dim('Run')} ${chalk.cyan('antigravity start --foreground')} ${chalk.dim('to see live logs.')}`);
 }

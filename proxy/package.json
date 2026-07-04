@@ -1,6 +1,6 @@
 {
   "name": "@12errh/antigravity-proxy",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "LLM proxy for Antigravity — translate Google Gemini API calls to any provider",
   "type": "module",
   "main": "dist/index.js",
@@ -20,6 +20,7 @@
     ".env.example",
     "tsconfig.json"
   ],
+  "postinstall": "node -e \"try{require('./dist/data-paths.js').migrateUserData()}catch{}\"",
   "engines": {
     "node": ">=20"
   },
@@ -36,9 +37,11 @@
   "dependencies": {
     "ai": "^6.0.193",
     "better-sqlite3": "^12.10.0",
+    "chalk": "^5.6.2",
     "commander": "^15.0.0",
     "dotenv": "^17.4.2",
     "node-forge": "^1.4.0",
+    "ora": "^9.4.1",
     "undici": "^7.7.0"
   },
   "devDependencies": {

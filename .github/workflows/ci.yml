@@ -12,7 +12,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     strategy:
-      fail-fast: false   # show all platform failures, not just the first
+      fail-fast: false # show all platform failures, not just the first
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         node: ['20', '22', '24']
@@ -39,13 +39,15 @@ jobs:
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
         run: npm ci --ignore-scripts
-        continue-on-error: false
 
       - name: Type-check
         run: npm run typecheck
 
-      - name: Run tests
-        run: npm test
+      - name: Run tests with timeout
+        shell: bash
+        run: |
+          timeout 120 npm test
+        timeout-minutes: 3
 
       - name: Build (compiled output)
         run: npm run build
@@ -57,5 +59,5 @@ jobs:
         shell: bash
         run: |
           test -f certs/cert.pem || (echo "cert.pem missing" && exit 1)
-          test -f certs/key.pem  || (echo "key.pem missing"  && exit 1)
+          test -f certs/key.pem || (echo "key.pem missing" && exit 1)
           echo "Certs generated successfully"

@@ -2,7 +2,9 @@ import fs from 'fs';
 import path from 'path';
 import { createReadStream } from 'fs';
 import { createInterface } from 'readline';
+import chalk from 'chalk';
 import { LOGS_DIR } from '../utils/paths.js';
+import { header, section, warn, info, error, table, formatBytes, divider } from '../ui.js';
 
 function getLogFiles(): string[] {
   try {
@@ -13,48 +15,80 @@ function getLogFiles(): string[] {
   } catch { return []; }
 }
 
+const LOG_COLORS = {
+  ERROR: chalk.red,
+  WARN: chalk.yellow,
+  INFO: chalk.cyan,
+  DEBUG: chalk.dim,
+} as const;
+
 export function logsCommand(action?: string, file?: string): void {
   if (!action || action === 'tail') {
     const files = getLogFiles();
     if (files.length === 0) {
-      console.log('  No log files found in logs/');
+      header('Proxy Logs');
+      console.log(`  ${warn('No log files found')}`);
       return;
     }
     const latest = path.join(LOGS_DIR, files[0]);
-    console.log(`  Tailing ${files[0]} (Ctrl+C to stop)\n`);
+    header(`Tailing: ${chalk.dim(files[0])}`);
+    console.log(`  ${info('Ctrl+C to stop')}\n`);
+
     const rl = createInterface({ input: createReadStream(latest), crlfDelay: Infinity });
-    rl.on('line', (line) => console.log(line));
-    rl.on('close', () => console.log('\n  [End of log]'));
+    let lineCount = 0;
+    rl.on('line', (line: string) => {
+      lineCount++;
+      const colored = colorizeLogLine(line);
+      console.log(colored);
+    });
+    rl.on('close', () => {
+      console.log(`\n  ${info(`End of log (${lineCount} lines shown)`)}`);
+    });
     return;
   }
 
   if (action === 'list') {
     const files = getLogFiles();
+    header('Log Files');
+
     if (files.length === 0) {
-      console.log('  No log files found');
+      console.log(`  ${warn('No log files found')}`);
       return;
     }
-    console.log('\n==> Log files');
-    for (const f of files) {
+
+    const rows = files.map(f => {
       const stat = fs.statSync(path.join(LOGS_DIR, f));
-      const size = stat.size > 1024 * 1024 ? `${(stat.size / 1024 / 1024).toFixed(1)}MB` : `${(stat.size / 1024).toFixed(1)}KB`;
-      console.log(`  ${f}  (${size})`);
-    }
-    console.log('');
+      return [f, formatBytes(stat.size)];
+    });
+
+    table(['Filename', 'Size'], rows);
     return;
   }
 
   if (action === 'show' && file) {
     const filepath = path.join(LOGS_DIR, path.basename(file));
     if (!fs.existsSync(filepath)) {
-      console.error(`  XX Log file not found: ${file}`);
+      error(`Log file not found: ${file}`);
       process.exit(1);
     }
+    header(`Showing: ${chalk.dim(file)}`);
     const content = fs.readFileSync(filepath, 'utf-8');
-    console.log(content);
+    for (const line of content.split('\n')) {
+      console.log(colorizeLogLine(line));
+    }
     return;
   }
 
-  console.error('Usage: antigravity logs [tail|list|show <file>]');
+  error('Usage: antigravity logs [tail|list|show <file>]', 'Try `antigravity logs list` to see available files');
   process.exit(1);
+}
+
+function colorizeLogLine(line: string): string {
+  const levelMatch = line.match(/\[(ERROR|WARN|INFO|DEBUG)\]/);
+  if (levelMatch) {
+    const level = levelMatch[1] as keyof typeof LOG_COLORS;
+    const color = LOG_COLORS[level] || chalk.dim;
+    return line.replace(/\[(ERROR|WARN|INFO|DEBUG)\]/, (m) => color.bold(m));
+  }
+  return chalk.dim(line);
 }

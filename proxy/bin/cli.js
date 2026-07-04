@@ -13,6 +13,7 @@ import { configCommand } from '../dist/cli/commands/config.js';
 import { logsCommand } from '../dist/cli/commands/logs.js';
 import { certsCommand } from '../dist/cli/commands/certs.js';
 import { setupCommand } from '../dist/cli/commands/setup.js';
+import { shellCommand } from '../dist/cli/commands/shell.js';
 
 const program = new Command();
 
@@ -73,5 +74,11 @@ program
   .command('setup')
   .description('Run the onboarding wizard')
   .action(setupCommand);
+
+program
+  .command('shell')
+  .description('Interactive monitoring shell')
+  .option('-p, --port <port>', 'proxy port', '443')
+  .action(shellCommand);
 
 program.parse();

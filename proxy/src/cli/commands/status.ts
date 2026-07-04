@@ -1,4 +1,6 @@
 import { isProxyRunning, getProxyPid } from '../utils/process.js';
+import chalk from 'chalk';
+import { section, ok, fail, header, statusBadge, valueBadge, elapsed, startSpinner, succeedSpinner, failSpinner, warnSpinner, error } from '../ui.js';
 
 interface StatusOptions {
   json?: boolean;
@@ -10,29 +12,40 @@ export async function statusCommand(opts: StatusOptions): Promise<void> {
 
   let healthData: any = null;
   if (running) {
+    const spinner = startSpinner('Fetching health data');
     try {
       const res = await fetch('http://localhost:4000/api/health');
       if (res.ok) healthData = await res.json();
-    } catch {}
+      succeedSpinner(spinner, 'Health data received');
+    } catch {
+      warnSpinner(spinner, 'Could not reach dashboard');
+    }
   }
 
-  if (opts.json) {
+  if (opts?.json) {
     console.log(JSON.stringify({ running, pid, health: healthData }, null, 2));
     return;
   }
 
-  console.log('\n==> Antigravity Proxy Status');
+  header('Antigravity Proxy Status');
+
+  console.log(`  ${statusBadge(running)}`);
+
   if (running) {
-    console.log(`  Status:   Running (PID ${pid})`);
+    console.log(`  ${valueBadge('PID', String(pid))}`);
     if (healthData) {
-      console.log(`  Uptime:   ${Math.floor(healthData.uptime)}s`);
-      console.log(`  Health:   ${healthData.status}`);
+      console.log(`  ${valueBadge('Uptime', elapsed(Math.floor(healthData.uptime * 1000)))}`);
+      const healthLabel = healthData.status === 'ok' ? chalk.green(healthData.status) : chalk.yellow(healthData.status);
+      console.log(`  ${valueBadge('Health', healthLabel)}`);
     }
-    console.log(`  Dashboard: http://localhost:4000`);
-    console.log(`  TLS Proxy: https://localhost:443`);
+    section('Endpoints');
+    console.log(`  ${valueBadge('Dashboard', 'http://localhost:4000')}`);
+    console.log(`  ${valueBadge('TLS Proxy', 'https://localhost:443')}`);
   } else {
-    console.log('  Status:   Stopped');
-    console.log('  Run `antigravity start` to start the proxy.');
+    console.log(`  ${valueBadge('Status', 'Stopped')}`);
+    console.log('');
+    console.log(`  ${chalk.cyan('Run `antigravity start` to start the proxy.')}`);
   }
+
   console.log('');
 }

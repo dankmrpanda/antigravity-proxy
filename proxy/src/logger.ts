@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { EventEmitter } from 'events';
 import { config } from './config.js';
 import * as db from './db.js';
+import { USER_LOGS_DIR } from './data-paths.js';
 
 const LOG_LEVELS = { debug: 0, info: 1, warn: 2, error: 3 } as const;
 
@@ -12,8 +13,7 @@ function getCurrentLevel(): number {
   return LOG_LEVELS[config.logLevel as keyof typeof LOG_LEVELS] ?? 1;
 }
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const logDir = path.resolve(__dirname, '..', 'logs');
+const logDir = USER_LOGS_DIR;
 
 const LOG_MAX_SIZE_BYTES = Math.max(0, parseInt(process.env.LOG_MAX_SIZE_MB || '25', 10)) * 1024 * 1024;
 const LOG_MAX_FILES = Math.max(1, parseInt(process.env.LOG_MAX_FILES || '7', 10));

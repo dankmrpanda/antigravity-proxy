@@ -3,5 +3,6 @@ node_modules/
 certs/
 dist/
 logs/
+data/
 .DS_Store
 Thumbs.db

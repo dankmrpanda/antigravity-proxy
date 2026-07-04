@@ -1,7 +1,8 @@
 import fs from 'fs';
 import path from 'path';
-import * as readline from 'readline';
+import chalk from 'chalk';
 import { USER_ENV_PATH as ENV_PATH, ENV_EXAMPLE } from '../utils/paths.js';
+import { header, section, ok, warn, info, confirm, prompt, select, maskKey, arrow, divider } from '../ui.js';
 
 const PROVIDERS = [
   { id: 'openrouter', name: 'OpenRouter', envKey: 'OPENROUTER_API_KEY', placeholder: 'sk-or-v1-...' },
@@ -17,19 +18,6 @@ const PROVIDERS = [
   { id: 'lmstudio', name: 'LM Studio (local)', envKey: '', placeholder: '' },
 ];
 
-function createRl(): readline.Interface {
-  return readline.createInterface({ input: process.stdin, output: process.stdout });
-}
-
-function ask(rl: readline.Interface, question: string): Promise<string> {
-  return new Promise((resolve) => rl.question(question, resolve));
-}
-
-function maskKey(key: string): string {
-  if (!key || key.length < 10) return key;
-  return key.slice(0, 6) + '***' + key.slice(-4);
-}
-
 function ensureEnvExists(): void {
   if (!fs.existsSync(ENV_PATH) && fs.existsSync(ENV_EXAMPLE)) {
     fs.copyFileSync(ENV_EXAMPLE, ENV_PATH);
@@ -44,7 +32,7 @@ function readEnv(): Record<string, string> {
       const m = line.match(/^([A-Z_]+)=(.*)/);
       if (m) result[m[1]] = m[2].trim();
     }
-  } catch { /* .env may not exist */ }
+  } catch {}
   return result;
 }
 
@@ -60,154 +48,139 @@ function writeEnv(updates: Record<string, string>): void {
 }
 
 export async function setupCommand(): Promise<void> {
-  // Step 0: Ensure .env exists from template (never overwrite existing keys)
   ensureEnvExists();
 
-  const rl = createRl();
   const env = readEnv();
 
-  console.log('');
-  console.log('  ==========================================');
-  console.log('   Antigravity - Setup Wizard');
-  console.log('  ==========================================');
-  console.log('');
+  header('Antigravity Setup Wizard');
+  console.log(`  ${chalk.dim("Let's configure your proxy in a few steps.")}\n`);
 
-  // Show existing config if any
   const existingKeys = Object.keys(env).filter(k => k.includes('API_KEY') && env[k]);
   if (existingKeys.length > 0) {
-    console.log('  Existing configuration detected:');
+    section('Existing Configuration');
     for (const k of existingKeys) {
-      console.log(`    ${k}=${maskKey(env[k])}`);
+      console.log(`  ${chalk.cyan(k)}${chalk.dim('=')}${maskKey(env[k])}`);
     }
     console.log('');
+    const keep = await confirm('Keep existing configuration?', true);
+    if (!keep) {
+      console.log(`  ${info('Starting fresh')}\n`);
+    } else {
+      console.log(`  ${ok('Preserving existing config')}\n`);
+    }
   }
 
-  console.log('  This wizard will configure your first provider.');
-  console.log('  You can add more providers later from the dashboard.');
-  console.log('');
+  section('Step 1: Choose Provider');
+  const providerChoices = PROVIDERS.map(p => ({ name: p.name, value: p.id }));
+  const providerId = await select('Select your LLM provider:', providerChoices);
+  const provider = PROVIDERS.find(p => p.id === providerId)!;
+  console.log(`  ${arrow(`Selected: ${chalk.bold(provider.name)}`)}\n`);
 
-  // 1. Select provider
-  console.log('  Available providers:');
-  for (let i = 0; i < PROVIDERS.length; i++) {
-    console.log(`    ${i + 1}. ${PROVIDERS[i].name}`);
-  }
-  console.log('');
-  const providerIdx = parseInt(await ask(rl, '  Select provider [1]: '), 10) - 1;
-  const provider = PROVIDERS[Math.max(0, Math.min(providerIdx, PROVIDERS.length - 1))];
-  console.log(`  Selected: ${provider.name}`);
-  console.log('');
-
-  // 2. API key (skip for Ollama)
+  section('Step 2: API Key');
   let apiKey = '';
   if (provider.envKey) {
     const existingKey = env[provider.envKey] || '';
     if (existingKey && existingKey !== `sk-...` && !existingKey.startsWith('sk-...')) {
-      console.log(`  Existing ${provider.name} key: ${maskKey(existingKey)}`);
-      const keep = await ask(rl, '  Keep existing key? [Y/n]: ');
-      if (keep.toLowerCase() !== 'n') {
+      console.log(`  ${info(`Existing key: ${maskKey(existingKey)}`)}`);
+      const keep = await confirm('Keep existing key?', true);
+      if (keep) {
         apiKey = existingKey;
-        console.log('  Keeping existing key');
-        console.log('');
+        console.log(`  ${ok('Keeping existing key')}\n`);
       }
     }
     if (!apiKey) {
-      console.log(`  Enter your ${provider.name} API key.`);
-      console.log(`  (Leave blank to skip - you can set it later in the dashboard)`);
-      console.log('');
-      apiKey = await ask(rl, `  API key: `);
+      apiKey = await prompt(`Enter your ${provider.name} API key:`);
       if (apiKey) {
-        console.log(`  Key: ${maskKey(apiKey)}`);
+        console.log(`  ${arrow(`Key: ${maskKey(apiKey)}`)}\n`);
       } else {
-        console.log('  Skipped - set it later from the dashboard Config tab.');
+        console.log(`  ${warn('Skipped — set it later from the dashboard Config tab')}\n`);
       }
-      console.log('');
     }
   }
 
-  // 3. Proxy port
-  console.log('  Select proxy port:');
-  console.log('    1. 443   (default, requires admin/root)');
-  console.log('    2. 8443  (no admin needed)');
-  console.log('');
+  section('Step 3: Proxy Port');
   const currentPort = env['PROXY_PORT'] || '443';
-  const portChoice = parseInt(await ask(rl, `  Port [${currentPort === '8443' ? '2' : '1'}]: `), 10);
-  const proxyPort = portChoice === 2 ? '8443' : currentPort;
-  console.log(`  Port: ${proxyPort}`);
-  console.log('');
+  const portChoices = [
+    { name: `443   (default, requires admin/root)`, value: '443' },
+    { name: `8443  (no admin needed)`, value: '8443' },
+  ];
+  const defaultPort = currentPort === '8443' ? '8443' : '443';
+  const proxyPort = await select(`Select proxy port [current: ${currentPort}]:`, portChoices);
+  console.log(`  ${arrow(`Port: ${chalk.bold(proxyPort)}`)}\n`);
 
-  // 4. Context strip mode
-  console.log('  Context strip mode:');
-  console.log('    1. lite (recommended) - compressed context, ~66% fewer tokens');
-  console.log('    2. strip              - remove skills/plugins, inject full agent-context.md');
-  console.log('    3. passthrough        - send full Antigravity context unchanged');
-  console.log('');
+  section('Step 4: Context Mode');
   const currentMode = env['CONTEXT_STRIP_MODE'] || 'passthrough';
-  let defaultChoice = '1';
-  if (currentMode === 'strip') defaultChoice = '2';
-  else if (currentMode === 'passthrough') defaultChoice = '3';
-  const stripChoice = parseInt(await ask(rl, `  Mode [${defaultChoice}]: `), 10) || 1;
-  const contextMode = stripChoice === 2 ? 'strip' : stripChoice === 3 ? 'passthrough' : 'lite';
-  console.log(`  Mode: ${contextMode}`);
-  console.log('');
+  const contextChoices = [
+    { name: `lite (recommended) — compressed context, ~66% fewer tokens`, value: 'lite' },
+    { name: `strip — remove skills/plugins, inject full agent-context.md`, value: 'strip' },
+    { name: `passthrough — send full Antigravity context unchanged`, value: 'passthrough' },
+  ];
+  const contextMode = await select(`Context strip mode [current: ${currentMode}]:`, contextChoices);
+  console.log(`  ${arrow(`Mode: ${chalk.bold(contextMode)}`)}\n`);
 
-  // 5. Auto-trust certificates
-  console.log('  Auto-trust TLS certificate on this machine?');
-  const trustChoice = await ask(rl, '  Trust cert? [Y/n]: ');
-  const trustCerts = trustChoice.toLowerCase() !== 'n';
-  console.log('');
+  section('Step 5: Certificate Trust');
+  const trustCerts = await confirm('Auto-trust TLS certificate on this machine?', true);
+  console.log(`  ${trustCerts ? ok('Will trust certificates') : warn('Will skip certificate trust')}\n`);
 
-  // 6. Dashboard auth
-  console.log('  Set up dashboard authentication?');
+  section('Step 6: Dashboard Auth');
   const existingUser = env['DASHBOARD_USER'] || '';
   if (existingUser) {
-    console.log(`  Existing auth user: ${existingUser}`);
-  }
-  const authChoice = await ask(rl, existingUser ? '  Keep existing auth? [Y/n]: ' : '  Enable auth? [y/N]: ');
-  let dashUser = existingUser;
-  let dashPass = env['DASHBOARD_PASSWORD'] || '';
-  if (existingUser && authChoice.toLowerCase() !== 'n') {
-    console.log('  Keeping existing auth');
-  } else if (authChoice.toLowerCase() === 'y') {
-    dashUser = await ask(rl, '  Username: ');
-    dashPass = await ask(rl, '  Password: ');
+    console.log(`  ${info(`Existing auth user: ${existingUser}`)}`);
+    const keep = await confirm('Keep existing auth?', true);
+    if (keep) {
+      console.log(`  ${ok('Keeping existing auth')}\n`);
+    } else {
+      const dashUser = await prompt('Username:', existingUser);
+      const dashPass = await prompt('Password:');
+      if (dashUser && dashPass) {
+        writeEnv({
+          'DASHBOARD_USER': dashUser,
+          'DASHBOARD_PASSWORD': dashPass,
+          'PROVIDER_PRIORITY': providerId,
+          ...(apiKey && provider.envKey ? { [provider.envKey]: apiKey } : {}),
+          'PROXY_PORT': proxyPort,
+          'CONTEXT_STRIP_MODE': contextMode,
+        });
+      }
+    }
+    if (keep) {
+      writeEnv({
+        'PROVIDER_PRIORITY': providerId,
+        ...(apiKey && provider.envKey ? { [provider.envKey]: apiKey } : {}),
+        'PROXY_PORT': proxyPort,
+        'CONTEXT_STRIP_MODE': contextMode,
+      });
+    }
   } else {
-    dashUser = '';
-    dashPass = '';
-  }
-  console.log('');
-
-  // Write only the changes — .env.example template is already the base
-  const updates: Record<string, string> = {};
-  updates['PROVIDER_PRIORITY'] = provider.id;
-  if (provider.envKey && apiKey) {
-    updates[provider.envKey] = apiKey;
-  }
-  updates['PROXY_PORT'] = proxyPort;
-  updates['CONTEXT_STRIP_MODE'] = contextMode;
-  if (dashUser && dashPass) {
-    updates['DASHBOARD_USER'] = dashUser;
-    updates['DASHBOARD_PASSWORD'] = dashPass;
-  } else {
-    updates['DASHBOARD_USER'] = '';
-    updates['DASHBOARD_PASSWORD'] = '';
+    const enableAuth = await confirm('Enable dashboard authentication?', false);
+    let dashUser = '';
+    let dashPass = '';
+    if (enableAuth) {
+      dashUser = await prompt('Username:');
+      dashPass = await prompt('Password:');
+    }
+    writeEnv({
+      'PROVIDER_PRIORITY': providerId,
+      ...(apiKey && provider.envKey ? { [provider.envKey]: apiKey } : {}),
+      'PROXY_PORT': proxyPort,
+      'CONTEXT_STRIP_MODE': contextMode,
+      'DASHBOARD_USER': dashUser,
+      'DASHBOARD_PASSWORD': dashPass,
+    });
   }
 
-  writeEnv(updates);
-  console.log('==> Configuration saved to .env');
-  console.log('');
+  divider();
+  console.log(`  ${ok('Configuration saved!')}`);
+  console.log(`  ${info(`File: ${chalk.dim(ENV_PATH)}`)}\n`);
 
-  // Ask to start proxy
-  const startChoice = await ask(rl, '  Start the proxy now? [Y/n]: ');
-  rl.close();
-
-  if (startChoice.toLowerCase() !== 'n') {
+  const startNow = await confirm('Start the proxy now?', true);
+  if (startNow) {
     console.log('');
     const { startCommand } = await import('./start.js');
     await startCommand({ port: proxyPort, browser: true, trustCert: trustCerts });
   } else {
-    console.log('');
-    console.log('  Run `antigravity start` when ready.');
-    console.log('  Run `antigravity start --trust-cert` to auto-trust the TLS certificate.');
+    console.log(`  ${arrow('Run `antigravity start` when ready.')}`);
+    console.log(`  ${arrow('Run `antigravity start --trust-cert` to auto-trust the TLS cert.')}`);
     console.log('');
   }
 }

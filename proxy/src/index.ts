@@ -19,6 +19,7 @@ import { checkRateLimit, recordRequest, setRateLimitConfig } from './rate-limite
 import { checkBlocked } from './blocklist.js';
 import { scanLocalProviders } from './local-discovery.js';
 import { installAgentContext } from './install-context.js';
+import { USER_CERT_FILE, USER_KEY_FILE } from './data-paths.js';
 import { getWorkspaceContextEnvelope, wrapToolResultForContextFile, isWorkspaceContextFile } from './workspace-context.js';
 import { getSessionId, setSessionId } from './session-store.js';
 import { safeWrite } from './utils/safe-write.js';
@@ -782,8 +783,8 @@ async function main(): Promise<void> {
   });
 
   // TLS server on port 443 (model inference + all other traffic)
-  const certPath = path.resolve(__dirname, '..', 'certs', 'cert.pem');
-  const keyPath = path.resolve(__dirname, '..', 'certs', 'key.pem');
+  const certPath = USER_CERT_FILE;
+  const keyPath = USER_KEY_FILE;
 
   if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
     const tlsServer = http2.createSecureServer(

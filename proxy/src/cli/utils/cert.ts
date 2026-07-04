@@ -3,10 +3,11 @@ import path from 'path';
 import { execSync } from 'child_process';
 import { platform } from 'os';
 import { PROXY_DIR } from './paths.js';
+import { USER_CERTS_DIR, USER_CERT_FILE, USER_KEY_FILE } from '../../data-paths.js';
 
-const CERT_DIR = path.resolve(PROXY_DIR, 'certs');
-const CERT_FILE = path.join(CERT_DIR, 'cert.pem');
-const KEY_FILE = path.join(CERT_DIR, 'key.pem');
+const CERT_DIR = USER_CERTS_DIR;
+const CERT_FILE = USER_CERT_FILE;
+const KEY_FILE = USER_KEY_FILE;
 
 export function certExists(): boolean {
   return fs.existsSync(CERT_FILE) && fs.existsSync(KEY_FILE);

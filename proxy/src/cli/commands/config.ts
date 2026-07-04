@@ -1,5 +1,7 @@
 import fs from 'fs';
+import chalk from 'chalk';
 import { USER_ENV_PATH as ENV_PATH } from '../utils/paths.js';
+import { header, ok, warn, error, section, maskKey, table, divider } from '../ui.js';
 
 function readEnv(): Record<string, string> {
   const result: Record<string, string> = {};
@@ -38,10 +40,21 @@ export function configCommand(action?: string, key?: string, value?: string, opt
       console.log(JSON.stringify(env, null, 2));
       return;
     }
-    console.log('\n==> Current Configuration');
+
+    header('Current Configuration');
+
+    const entries = Object.entries(env);
+    if (entries.length === 0) {
+      console.log(`  ${warn('No configuration found')}`);
+      console.log(`  ${chalk.cyan('Run `antigravity setup` to configure.')}`);
+      return;
+    }
+
+    section('Environment Variables');
     for (const [k, v] of Object.entries(env)) {
-      const display = k.includes('KEY') ? v.slice(0, 8) + '***' : v;
-      console.log(`  ${k}=${display}`);
+      const isKey = k.includes('KEY') || k.includes('PASSWORD') || k.includes('SECRET');
+      const display = isKey ? maskKey(v) : v;
+      console.log(`  ${chalk.cyan(k)}${chalk.dim('=')}${display}`);
     }
     console.log('');
     return;
@@ -53,9 +66,10 @@ export function configCommand(action?: string, key?: string, value?: string, opt
     if (opts?.json) {
       console.log(JSON.stringify({ key, value: val || null }));
     } else if (val) {
-      console.log(`${key}=${val}`);
+      const isKey = key.includes('KEY') || key.includes('PASSWORD') || key.includes('SECRET');
+      console.log(`${key}=${isKey ? maskKey(val) : val}`);
     } else {
-      console.error(`  Key "${key}" not found in .env`);
+      error(`Key "${key}" not found in .env`);
       process.exit(1);
     }
     return;
@@ -63,13 +77,14 @@ export function configCommand(action?: string, key?: string, value?: string, opt
 
   if (action === 'set' && key && value !== undefined) {
     if (!writeEnv({ [key]: value })) {
-      console.error('  XX Failed to write .env');
+      error('Failed to write .env');
       process.exit(1);
     }
-    console.log(`  OK ${key} updated`);
+    const isKey = key.includes('KEY') || key.includes('PASSWORD') || key.includes('SECRET');
+    console.log(`  ${ok(`${key} updated to ${isKey ? maskKey(value) : value}`)}`);
     return;
   }
 
-  console.error('Usage: antigravity config [show|get|set] [key] [value]');
+  error('Usage: antigravity config [show|get|set] [key] [value]');
   process.exit(1);
 }
