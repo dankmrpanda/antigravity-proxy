@@ -30,17 +30,29 @@ describe('Compaction', () => {
   });
 
   describe('selectMessagesToCompact', () => {
-    it('preserves last N turns', () => {
+    it('preserves last N turns (2 messages per turn)', () => {
       const messages: OpenAIMessage[] = [
         { role: 'user', content: 'msg1' },
         { role: 'assistant', content: 'resp1' },
         { role: 'user', content: 'msg2' },
         { role: 'assistant', content: 'resp2' },
         { role: 'user', content: 'msg3' },
+        { role: 'assistant', content: 'resp3' },
       ];
+      // tailTurns=1 preserves 1 turn = 2 messages (last user+assistant)
       const { toCompact, toPreserve } = selectMessagesToCompact(messages, 1);
       assert.equal(toCompact.length, 4); // first 4 messages
-      assert.equal(toPreserve.length, 1); // last 1 message
+      assert.equal(toPreserve.length, 2); // last 2 messages (1 turn)
+    });
+
+    it('preserves all messages when fewer than tailTurns', () => {
+      const messages: OpenAIMessage[] = [
+        { role: 'user', content: 'msg1' },
+        { role: 'assistant', content: 'resp1' },
+      ];
+      const { toCompact, toPreserve } = selectMessagesToCompact(messages, 2);
+      assert.equal(toCompact.length, 0);
+      assert.equal(toPreserve.length, 2);
     });
   });
 

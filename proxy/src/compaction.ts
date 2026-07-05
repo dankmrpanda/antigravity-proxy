@@ -47,11 +47,13 @@ export function selectMessagesToCompact(
   messages: OpenAIMessage[],
   tailTurns: number = DEFAULT_TAIL_TURNS,
 ): { toCompact: OpenAIMessage[]; toPreserve: OpenAIMessage[] } {
-  if (messages.length <= tailTurns) {
+  // Each turn is a user + assistant pair (2 messages)
+  const preserveCount = tailTurns * 2;
+  if (messages.length <= preserveCount) {
     return { toCompact: [], toPreserve: messages };
   }
-  const toPreserve = messages.slice(-tailTurns);
-  const toCompact = messages.slice(0, -tailTurns);
+  const toPreserve = messages.slice(-preserveCount);
+  const toCompact = messages.slice(0, -preserveCount);
   return { toCompact, toPreserve };
 }
 
