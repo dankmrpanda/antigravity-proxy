@@ -145,45 +145,43 @@ export function cleanHostsFile(): void {
 }
 
 export function untrustCert(): void {
-  if (!certExists()) {
-    return;
-  }
-
   const p = platform();
-  if (p === 'win32') {
-    try {
-      const lines = fs.readFileSync(CERT_FILE, 'utf-8').split('\n').filter(l => !l.startsWith('-----') && l.trim());
-      const b64 = lines.join('');
-      const derBytes = Buffer.from(b64, 'base64');
-      const crypto = require('crypto');
-      const sha1 = crypto.createHash('sha1').update(derBytes).digest('hex').toUpperCase();
+  if (certExists()) {
+    if (p === 'win32') {
+      try {
+        const lines = fs.readFileSync(CERT_FILE, 'utf-8').split('\n').filter(l => !l.startsWith('-----') && l.trim());
+        const b64 = lines.join('');
+        const derBytes = Buffer.from(b64, 'base64');
+        const crypto = require('crypto');
+        const sha1 = crypto.createHash('sha1').update(derBytes).digest('hex').toUpperCase();
 
-      execSync(
-        `powershell -NoProfile -Command "Get-ChildItem Cert:\\LocalMachine\\Root | Where-Object { $_.Thumbprint -eq '${sha1}' } | Remove-Item"`,
-        { stdio: 'pipe', timeout: 15000 }
-      );
-    } catch {
-      // Certificate may not be trusted — continue silently
-    }
-  } else if (p === 'darwin') {
-    try {
-      execSync('sudo security delete-certificate -c "localhost" -t /Library/Keychains/System.keychain', {
-        stdio: 'inherit', timeout: 15000,
-      });
-    } catch {
-      // Certificate may not be in keychain — continue silently
-    }
-  } else {
-    try {
-      execSync('sudo rm -f /usr/local/share/ca-certificates/antigravity-proxy.crt && sudo update-ca-certificates', {
-        stdio: 'inherit', timeout: 15000,
-      });
-    } catch {
-      // Certificate may not exist — continue silently
+        execSync(
+          `powershell -NoProfile -Command "Get-ChildItem Cert:\\LocalMachine\\Root | Where-Object { $_.Thumbprint -eq '${sha1}' } | Remove-Item"`,
+          { stdio: 'pipe', timeout: 15000 }
+        );
+      } catch {
+        // Certificate may not be trusted — continue silently
+      }
+    } else if (p === 'darwin') {
+      try {
+        execSync('sudo security delete-certificate -c "localhost" -t /Library/Keychains/System.keychain', {
+          stdio: 'inherit', timeout: 15000,
+        });
+      } catch {
+        // Certificate may not be in keychain — continue silently
+      }
+    } else {
+      try {
+        execSync('sudo rm -f /usr/local/share/ca-certificates/antigravity-proxy.crt && sudo update-ca-certificates', {
+          stdio: 'inherit', timeout: 15000,
+        });
+      } catch {
+        // Certificate may not exist — continue silently
+      }
     }
   }
 
-  // Also clean up hosts file entries that route traffic to the proxy
+  // Always clean up hosts file entries that route traffic to the proxy
   cleanHostsFile();
 }
 

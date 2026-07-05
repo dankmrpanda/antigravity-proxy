@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { execSync, spawn, exec } from 'child_process';
 import { platform } from 'os';
-import { certExists, generateCerts, trustCert } from '../utils/cert.js';
+import { certExists, generateCerts, trustCert, cleanHostsFile } from '../utils/cert.js';
 import { killProcessesOnPorts } from '../utils/port.js';
 import { startProxy, isProxyRunning, waitForHealth } from '../utils/process.js';
 import { openUrl } from '../utils/open.js';
@@ -81,6 +81,11 @@ export async function startCommand(opts: StartOptions): Promise<void> {
   if (opts.simple) {
     section('Simple Mode');
     console.log(`  ${info('Launching Antigravity directly (no proxy)')}\n`);
+
+    // Clean up hosts file entries that route traffic to the proxy
+    section('Cleaning up proxy routing');
+    cleanHostsFile();
+    console.log(`  ${ok('Hosts file cleaned')}`);
 
     console.log(`  ${arrow('Launching Antigravity desktop')}`);
     if (launchAntigravityDesktop()) {
