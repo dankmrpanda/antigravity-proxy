@@ -117,6 +117,32 @@ const PROXY_HOSTS_ENTRIES = [
   '127.0.0.1  app.kiro.dev',
 ];
 
+// Run a PowerShell command with UAC elevation without opening a new window
+function runElevated(psCommand: string): boolean {
+  if (platform() !== 'win32') return false;
+
+  try {
+    // Create a VBScript that uses ShellExecute with "runas" to elevate silently
+    const vbsScript = `
+      Set objShell = CreateObject("Shell.Application")
+      objShell.ShellExecute "powershell.exe", "-NoProfile -NonInteractive -Command ""${psCommand.replace(/"/g, '""')}""", "", "runas", 1
+    `.trim();
+
+    const vbsFile = path.join(process.env.TEMP || '', 'antigravity_elevate.vbs');
+    fs.writeFileSync(vbsFile, vbsScript, 'utf-8');
+
+    // Run VBScript and wait for it to complete
+    execSync(`cscript //nologo "${vbsFile}"`, { stdio: 'pipe', timeout: 30000 });
+
+    // Clean up
+    try { fs.unlinkSync(vbsFile); } catch {}
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export interface HostsCleanResult {
   found: boolean;
   cleaned: boolean;
@@ -172,26 +198,24 @@ export function cleanHostsFile(): HostsCleanResult {
 
 function cleanHostsFileWithUAC(content: string): HostsCleanResult {
   try {
-    // Write cleaned content to a temp file, then use UAC to copy it
-    const tmpFile = path.join(process.env.TEMP || '', 'antigravity_hosts_clean.txt');
+    const tmpFile = path.join(process.env.TEMP || '', 'antigravity_hosts.txt');
     fs.writeFileSync(tmpFile, content, 'utf-8');
 
-    // Use PowerShell with Start-Process -Verb RunAs to overwrite hosts file
     const psCommand = `Copy-Item -Path '${tmpFile}' -Destination 'C:\\Windows\\System32\\drivers\\etc\\hosts' -Force`;
-    execSync(
-      `powershell -NoProfile -Command "Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile -Command \\"${psCommand.replace(/"/g, '\\"')}\\"' -Wait"`,
-      { stdio: 'pipe', timeout: 30000 }
-    );
+    const result = runElevated(psCommand);
 
-    // Clean up temp file
     try { fs.unlinkSync(tmpFile); } catch {}
+
+    if (!result) {
+      return { found: true, cleaned: false, error: 'UAC elevation denied or failed' };
+    }
 
     // Verify the cleanup worked
     const verifyContent = fs.readFileSync('C:\\Windows\\System32\\drivers\\etc\\hosts', 'utf-8');
     const stillHasEntries = PROXY_HOSTS_ENTRIES.some(e => verifyContent.includes(e.trim()));
 
     if (stillHasEntries) {
-      return { found: true, cleaned: false, error: 'UAC elevation may have been denied' };
+      return { found: true, cleaned: false, error: 'Hosts file was not updated' };
     }
     return { found: true, cleaned: true };
   } catch {
@@ -249,23 +273,24 @@ export function setupHostsFile(): HostsCleanResult {
 
 function setupHostsFileWithUAC(content: string): HostsCleanResult {
   try {
-    const tmpFile = path.join(process.env.TEMP || '', 'antigravity_hosts_setup.txt');
+    const tmpFile = path.join(process.env.TEMP || '', 'antigravity_hosts.txt');
     fs.writeFileSync(tmpFile, content, 'utf-8');
 
     const psCommand = `Copy-Item -Path '${tmpFile}' -Destination 'C:\\Windows\\System32\\drivers\\etc\\hosts' -Force`;
-    execSync(
-      `powershell -NoProfile -Command "Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile -Command \\"${psCommand.replace(/"/g, '\\"')}\\"' -Wait"`,
-      { stdio: 'pipe', timeout: 30000 }
-    );
+    const result = runElevated(psCommand);
 
     try { fs.unlinkSync(tmpFile); } catch {}
+
+    if (!result) {
+      return { found: true, cleaned: false, error: 'UAC elevation denied or failed' };
+    }
 
     // Verify setup worked
     const verifyContent = fs.readFileSync('C:\\Windows\\System32\\drivers\\etc\\hosts', 'utf-8');
     const hasEntries = PROXY_HOSTS_ENTRIES.every(e => verifyContent.includes(e.trim().split(' ')[1]));
 
     if (!hasEntries) {
-      return { found: true, cleaned: false, error: 'UAC elevation may have been denied' };
+      return { found: true, cleaned: false, error: 'Hosts file was not updated' };
     }
     return { found: true, cleaned: true };
   } catch {
