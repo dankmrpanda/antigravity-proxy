@@ -12,9 +12,9 @@ export function setContextWindow(model: string, tokens: number): void {
 export function getContextWindow(model: string): number {
   if (manualOverrides.has(model)) return manualOverrides.get(model)!;
   if (contextWindows.has(model)) return contextWindows.get(model)!;
-  // Partial match: check if any key is a prefix of the model name
+  // Partial match: check if the model name starts with any key (prefix resolution)
   for (const [key, value] of contextWindows) {
-    if (model.startsWith(key) || key.startsWith(model)) return value;
+    if (model.startsWith(key)) return value;
   }
   return DEFAULT_CONTEXT_WINDOW;
 }
