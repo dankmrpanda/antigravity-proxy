@@ -4,7 +4,8 @@ const CHARS_PER_TOKEN = 4;
 const ROLE_OVERHEAD_TOKENS = 4; // Approximate tokens for role/formatting per message
 
 export function estimateTokens(text: string): number {
-  return Math.max(1, Math.ceil(text.length / CHARS_PER_TOKEN));
+  if (!text) return 0;
+  return Math.ceil(text.length / CHARS_PER_TOKEN);
 }
 
 export function estimateSystemTokens(system: string): number {
@@ -25,6 +26,16 @@ export function estimateMessageTokens(messages: OpenAIMessage[]): number {
         } else if (part && typeof part === 'object') {
           total += estimateTokens(JSON.stringify(part));
         }
+      }
+    }
+    // Estimate reasoning_content if present (used by o1/o3 models)
+    if (msg.reasoning_content) {
+      total += estimateTokens(msg.reasoning_content);
+    }
+    // Estimate tool_calls if present (assistant messages with tool calls)
+    if (msg.tool_calls && Array.isArray(msg.tool_calls)) {
+      for (const tc of msg.tool_calls) {
+        total += estimateTokens(JSON.stringify(tc));
       }
     }
   }
