@@ -24,7 +24,6 @@ function elevateAndRun() {
   const args = process.argv.slice(2);
   const cmd = args[0] || '';
 
-  // Only elevate on Windows, for commands that need it
   if (platform() !== 'win32' || !ADMIN_COMMANDS.includes(cmd)) return false;
   if (isAdmin()) return false;
 
@@ -32,36 +31,36 @@ function elevateAndRun() {
   console.log('  Requesting Administrator access...');
   console.log('');
 
-  const nodeExe = process.execPath;
-  const scriptPath = process.argv[1];
-
-  // Build a batch file that runs the command elevated
-  const batchLines = [
-    '@echo off',
-    `"%~dp0node_modules\\.bin\\cmd.exe" /c "node" "${scriptPath}" ${args.join(' ')}`,
-  ];
-
-  // Actually, use a simpler approach: create a temp .cmd file and run it elevated
-  const cmdContent = `"${nodeExe}" "${scriptPath}" ${args.join(' ')}`;
-  const tmpCmd = `${process.env.TEMP || ''}\\antigravity_run.cmd`;
-
   try {
-    require('fs').writeFileSync(tmpCmd, cmdContent, 'utf-8');
+    // Simple, reliable elevation: write a .cmd file and run it with cmd /c start
+    const nodeExe = process.execPath;
+    const scriptPath = process.argv[1];
+    const cmdLine = `"${nodeExe}" "${scriptPath}" ${args.join(' ')}`;
 
-    // Use Start-Process with cmd /c to run elevated
-    const psCmd = `Start-Process -FilePath 'cmd.exe' -ArgumentList '/c "${tmpCmd}"' -Verb RunAs -WindowStyle Normal`;
-    execSync(`powershell -NoProfile -Command "${psCmd.replace(/"/g, '\\"')}"`, {
+    const fs = require('fs');
+    const tmpFile = `${process.env.TEMP || ''}\\antigravity_elevate.cmd`;
+    fs.writeFileSync(tmpFile, `@echo off\n${cmdLine}\npause`, 'utf-8');
+
+    // Use Shell.Application via VBScript for reliable elevation
+    const vbsFile = `${process.env.TEMP || ''}\\antigravity_elevate.vbs`;
+    const vbs = `Set oShell = CreateObject("Shell.Application")\noShell.ShellExecute "cmd.exe", "/c ""${tmpFile}""", "", "runas", 1`;
+    fs.writeFileSync(vbsFile, vbs, 'ascii');
+
+    // Launch VBScript - this triggers UAC and runs elevated
+    const child = require('child_process').spawn('cscript', ['//nologo', vbsFile], {
       stdio: 'ignore',
-      timeout: 30000,
+      detached: true,
     });
+    child.unref();
 
-    // Clean up temp file
-    try { require('fs').unlinkSync(tmpCmd); } catch {}
+    // Clean up VBScript file after a delay
+    setTimeout(() => {
+      try { fs.unlinkSync(vbsFile); } catch {}
+    }, 2000);
 
     return true;
   } catch {
-    console.log('  Administrator access denied or failed.');
-    console.log('  Please run this terminal as Administrator manually.');
+    console.log('  Failed. Please run this terminal as Administrator.');
     console.log('');
     return true;
   }
