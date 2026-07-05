@@ -32,24 +32,34 @@ function elevateAndRun() {
   console.log('  Requesting Administrator access...');
   console.log('');
 
-  // Build the full command line for the elevated process
   const nodeExe = process.execPath;
   const scriptPath = process.argv[1];
 
-  // Build args array for PowerShell (properly escaped)
-  const psArgs = [scriptPath, ...args].map(a => `'${a.replace(/'/g, "''")}'`).join(',');
+  // Build a batch file that runs the command elevated
+  const batchLines = [
+    '@echo off',
+    `"%~dp0node_modules\\.bin\\cmd.exe" /c "node" "${scriptPath}" ${args.join(' ')}`,
+  ];
+
+  // Actually, use a simpler approach: create a temp .cmd file and run it elevated
+  const cmdContent = `"${nodeExe}" "${scriptPath}" ${args.join(' ')}`;
+  const tmpCmd = `${process.env.TEMP || ''}\\antigravity_run.cmd`;
 
   try {
-    // Start-Process -Verb RunAs launches UAC prompt and runs in new window
-    // Using -PassThru to get the process object, but not -Wait so we exit cleanly
-    const psCmd = `Start-Process -FilePath '${nodeExe}' -ArgumentList @(${psArgs}) -Verb RunAs -PassThru | Out-Null`;
+    require('fs').writeFileSync(tmpCmd, cmdContent, 'utf-8');
+
+    // Use Start-Process with cmd /c to run elevated
+    const psCmd = `Start-Process -FilePath 'cmd.exe' -ArgumentList '/c "${tmpCmd}"' -Verb RunAs -WindowStyle Normal`;
     execSync(`powershell -NoProfile -Command "${psCmd.replace(/"/g, '\\"')}"`, {
       stdio: 'ignore',
       timeout: 30000,
     });
+
+    // Clean up temp file
+    try { require('fs').unlinkSync(tmpCmd); } catch {}
+
     return true;
   } catch {
-    // UAC was denied or failed
     console.log('  Administrator access denied or failed.');
     console.log('  Please run this terminal as Administrator manually.');
     console.log('');
@@ -152,15 +162,3 @@ program
   .action(removeCommand);
 
 program.parse();
-
-// When running elevated in a new terminal, pause before closing
-// so the user can see the output
-if (platform() === 'win32' && isAdmin()) {
-  console.log('');
-  const readline = await import('readline');
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  rl.question('  Press any key to close...', () => {
-    rl.close();
-    process.exit(0);
-  });
-}
