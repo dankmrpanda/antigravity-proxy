@@ -1,13 +1,15 @@
 import { execSync, spawn } from 'child_process';
 import { platform } from 'os';
 import { isProxyRunning, stopProxy, startProxy, waitForHealth } from '../utils/process.js';
-import { isCertTrusted, trustCert, untrustCert } from '../utils/cert.js';
+import { certExists, isCertTrusted, trustCert, untrustCert } from '../utils/cert.js';
 import { header, section, ok, warn, info, confirm, divider } from '../ui.js';
 
 type Mode = 'proxy' | 'simple';
 
 function detectMode(): Mode {
-  if (isProxyRunning() || isCertTrusted()) {
+  // Proxy mode = certs have been generated (proxy was set up)
+  // Not just "is it running right now" — the user configured the proxy
+  if (certExists()) {
     return 'proxy';
   }
   return 'simple';

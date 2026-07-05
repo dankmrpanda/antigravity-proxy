@@ -16,6 +16,7 @@ interface StartOptions {
   browser?: boolean;
   foreground?: boolean;
   trustCert?: boolean;
+  simple?: boolean;
 }
 
 function launchAntigravityDesktop(): boolean {
@@ -75,6 +76,26 @@ export async function startCommand(opts: StartOptions): Promise<void> {
   const apiPort = 4000;
 
   header('Antigravity Proxy', `v${JSON.parse(fs.readFileSync(path.join(PROXY_DIR, 'package.json'), 'utf-8')).version}`);
+
+  // Simple mode: just launch Antigravity directly without proxy
+  if (opts.simple) {
+    section('Simple Mode');
+    console.log(`  ${info('Launching Antigravity directly (no proxy)')}\n`);
+
+    console.log(`  ${arrow('Launching Antigravity desktop')}`);
+    if (launchAntigravityDesktop()) {
+      console.log(`  ${ok('Antigravity launched')}`);
+    } else {
+      console.log(`  ${warn('Antigravity not found — launch it manually')}`);
+    }
+
+    console.log('');
+    console.log(`  ${chalk.bold.green('✓ Ready!')}`);
+    console.log(`  ${info('Antigravity is running in simple mode (direct Google access)')}`);
+    console.log('');
+    console.log(`  ${chalk.dim('Run')} ${chalk.cyan('antigravity start')} ${chalk.dim('to start with proxy.')}`);
+    return;
+  }
 
   section('Checking prerequisites');
 

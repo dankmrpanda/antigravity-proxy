@@ -31,6 +31,7 @@ program
   .option('--no-browser', 'do not open dashboard in browser')
   .option('-f, --foreground', 'run in foreground (do not detach)')
   .option('--trust-cert', 'auto-trust TLS certificate')
+  .option('-s, --simple', 'launch Antigravity directly without proxy')
   .action(startCommand);
 
 program
