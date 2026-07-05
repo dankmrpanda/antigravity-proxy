@@ -6,6 +6,22 @@ Dates are UTC. Commit hashes are the actual merge commits on `main`.
 
 ---
 
+## [1.0.10] — 2026-07-05
+
+### Added
+
+- **`antigravity switch`** — toggle between proxy mode (TLS interception + provider routing) and simple mode (direct Google access). Shows current mode, manages certificate trust and hosts file entries automatically.
+- **`antigravity remove`** — clean uninstall with two options: keep config files (removes certs, hosts entries, stops processes) or complete removal (deletes `~/.antigravity/` entirely).
+- **`antigravity start --simple`** — launch Antigravity directly without proxy (bypasses TLS interception, no admin required). Cleans up proxy routing entries from hosts file.
+- **Auto-admin elevation** — commands requiring privileges (`start`, `stop`, `switch`, `remove`, `setup`, `certs`) automatically request UAC elevation on Windows. Elevated terminal opens with output, original terminal exits cleanly.
+- **Mode detection** — `switch` command uses certificate trust status (not just cert file existence) to determine current mode.
+
+### Changed
+
+- **`antigravity stop`** — now auto-elevates when proxy is running on port 443 (privileged port). Stops cleanly without admin when proxy isn't running.
+
+---
+
 ## [1.0.7] — 2026-07-04
 
 ### Fixed

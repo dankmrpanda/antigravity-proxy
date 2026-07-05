@@ -8,7 +8,7 @@ const require = createRequire(import.meta.url);
 const pkg = require('../package.json');
 
 // Commands that need admin privileges on Windows
-const ADMIN_COMMANDS = ['start', 'switch', 'remove', 'setup', 'certs'];
+const ADMIN_COMMANDS = ['start', 'switch', 'remove', 'setup', 'certs', 'stop'];
 
 function isAdmin() {
   if (platform() !== 'win32') return true;
@@ -25,6 +25,8 @@ function elevateAndRun() {
   const cmd = args[0] || '';
 
   if (platform() !== 'win32' || !ADMIN_COMMANDS.includes(cmd)) return false;
+  // start --simple doesn't need admin (just launches desktop app)
+  if (cmd === 'start' && args.includes('--simple')) return false;
   if (isAdmin()) return false;
 
   console.log('');

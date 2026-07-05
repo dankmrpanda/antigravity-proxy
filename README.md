@@ -64,7 +64,10 @@ antigravity start                    # background mode — runs silently, launch
 antigravity start --foreground       # foreground mode — see live logs in terminal
 antigravity start --port 8443        # no admin needed
 antigravity start --trust-cert       # auto-trust TLS certificate
+antigravity start --simple           # launch Antigravity directly (no proxy, no admin)
 antigravity stop                     # stop everything cleanly
+antigravity switch                   # toggle between proxy and simple mode
+antigravity remove                   # remove proxy artifacts and clean up
 ```
 
 ### Launch from source (development)
@@ -96,6 +99,35 @@ chmod +x start.sh
 ```
 
 Then open **http://localhost:4000** in your browser to configure providers, model mappings, and view live stats.
+
+---
+
+## 📋 CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `antigravity start` | Start proxy + dashboard + launch Antigravity desktop |
+| `antigravity start --foreground` | Run in foreground with live logs |
+| `antigravity start --port 8443` | Use port 8443 (no admin needed) |
+| `antigravity start --no-browser` | Don't open dashboard in browser |
+| `antigravity start --trust-cert` | Auto-trust TLS certificate |
+| `antigravity start --simple` | Launch Antigravity directly without proxy (no admin) |
+| `antigravity stop` | Stop proxy + Antigravity desktop |
+| `antigravity status` | Show running status and uptime |
+| `antigravity health` | Check health endpoint |
+| `antigravity config` | Show current configuration |
+| `antigravity config set <key> <value>` | Update a config value |
+| `antigravity config get <key>` | Get a specific config value |
+| `antigravity logs` | Tail latest log file |
+| `antigravity logs list` | List all log files |
+| `antigravity certs` | Show certificate info |
+| `antigravity certs generate` | Generate TLS certificates |
+| `antigravity certs trust` | Install cert to OS trust store |
+| `antigravity setup` | Interactive onboarding wizard |
+| `antigravity switch` | Toggle between proxy and simple mode |
+| `antigravity remove` | Remove proxy artifacts and clean up |
+
+> **Admin elevation:** Commands requiring privileges (`start`, `stop`, `switch`, `remove`, `setup`, `certs`) automatically request UAC elevation on Windows. The `start --simple` flag skips elevation since it doesn't need admin. **Running from an Administrator terminal is recommended** for seamless flow — avoids repeated UAC prompts.
 
 ---
 

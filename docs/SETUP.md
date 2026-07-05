@@ -76,6 +76,8 @@ npm run build && npm run start:prod   # compiled (production)
 
 After installing globally, use these commands:
 
+> **Recommended:** Run from an **Administrator terminal** (PowerShell/CMD as Admin) for seamless flow — avoids repeated UAC prompts when switching modes, managing certs, or starting/stopping the proxy.
+
 | Command | Description |
 |---------|-------------|
 | `antigravity start` | Start proxy + dashboard + launch Antigravity desktop |
@@ -83,6 +85,7 @@ After installing globally, use these commands:
 | `antigravity start --port 8443` | Use port 8443 (no admin needed) |
 | `antigravity start --no-browser` | Don't open dashboard in browser |
 | `antigravity start --trust-cert` | Auto-trust TLS certificate |
+| `antigravity start --simple` | Launch Antigravity directly without proxy (no admin) |
 | `antigravity stop` | Stop proxy + Antigravity desktop |
 | `antigravity status` | Show running status and uptime |
 | `antigravity health` | Check health endpoint |
@@ -95,6 +98,8 @@ After installing globally, use these commands:
 | `antigravity certs generate` | Generate TLS certificates |
 | `antigravity certs trust` | Install cert to OS trust store |
 | `antigravity setup` | Interactive onboarding wizard |
+| `antigravity switch` | Toggle between proxy and simple mode |
+| `antigravity remove` | Remove proxy artifacts and clean up |
 
 ---
 
