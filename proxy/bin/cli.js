@@ -1,9 +1,56 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import { createRequire } from 'module';
+import { execSync, spawn } from 'child_process';
+import { platform } from 'os';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json');
+
+// Commands that need admin privileges on Windows
+const ADMIN_COMMANDS = ['start', 'switch', 'remove', 'setup', 'certs'];
+
+function isAdmin() {
+  if (platform() !== 'win32') return true;
+  try {
+    execSync('net session', { stdio: 'pipe', timeout: 5000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function elevateAndRun() {
+  const args = process.argv.slice(2);
+  const cmd = args[0] || '';
+
+  // Only elevate on Windows, for commands that need it
+  if (platform() !== 'win32' || !ADMIN_COMMANDS.includes(cmd)) return false;
+  if (isAdmin()) return false;
+
+  console.log('\n  This command requires Administrator privileges.\n');
+
+  // Build the full command line
+  const nodeExe = process.execPath;
+  const scriptPath = process.argv[1];
+  const fullArgs = [scriptPath, ...args].map(a => `"${a}"`).join(' ');
+
+  // Use cmd /c start /wait to run elevated and wait for completion
+  // This shows UAC, runs in a new console, and blocks until done
+  try {
+    const psCmd = `Start-Process -FilePath '${nodeExe}' -ArgumentList '${fullArgs}' -Verb RunAs -Wait`;
+    execSync(`powershell -NoProfile -Command "${psCmd}"`, { stdio: 'inherit', timeout: 300000 });
+    return true;
+  } catch {
+    console.log('  Failed to elevate. Run this terminal as Administrator.\n');
+    process.exit(1);
+  }
+}
+
+// Try to elevate if needed — this may exit the process
+if (elevateAndRun()) {
+  process.exit(0);
+}
 
 import { startCommand } from '../dist/cli/commands/start.js';
 import { stopCommand } from '../dist/cli/commands/stop.js';

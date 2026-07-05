@@ -117,57 +117,6 @@ const PROXY_HOSTS_ENTRIES = [
   '127.0.0.1  app.kiro.dev',
 ];
 
-// Run a PowerShell command with UAC elevation without opening a new window
-function runElevated(psCommand: string): boolean {
-  if (platform() !== 'win32') return false;
-
-  try {
-    // Write PowerShell command to a temp .ps1 file with error logging
-    const psFile = path.join(process.env.TEMP || '', 'antigravity_elevate.ps1');
-    const logFile = path.join(process.env.TEMP || '', 'antigravity_elevate.log');
-    const psContent = `try {
-  ${psCommand}
-  "SUCCESS" | Out-File -FilePath "${logFile}" -Encoding UTF8
-} catch {
-  "ERROR: $($_.Exception.Message)" | Out-File -FilePath "${logFile}" -Encoding UTF8
-}`;
-    fs.writeFileSync(psFile, psContent, 'utf-8');
-
-    // Create VBScript that runs the .ps1 file with elevation
-    const vbsScript = `Set objShell = CreateObject("Shell.Application")
-objShell.ShellExecute "powershell.exe", "-NoProfile -ExecutionPolicy Bypass -File ""${psFile}""", "", "runas", 1`;
-
-    const vbsFile = path.join(process.env.TEMP || '', 'antigravity_elevate.vbs');
-    fs.writeFileSync(vbsFile, vbsScript, 'utf-8');
-
-    // Run VBScript and wait for it to complete
-    execSync(`cscript //nologo "${vbsFile}"`, { stdio: 'pipe', timeout: 30000 });
-
-    // Check log file for result
-    let success = false;
-    try {
-      const log = fs.readFileSync(logFile, 'utf-8').trim();
-      success = log === 'SUCCESS';
-      if (!success && log) {
-        // Log the error for debugging
-        try {
-          const errLog = path.join(process.env.TEMP || '', 'antigravity_elevate_error.log');
-          fs.writeFileSync(errLog, `Command: ${psCommand}\nResult: ${log}`, 'utf-8');
-        } catch {}
-      }
-    } catch {}
-
-    // Clean up
-    try { fs.unlinkSync(vbsFile); } catch {}
-    try { fs.unlinkSync(psFile); } catch {}
-    try { fs.unlinkSync(logFile); } catch {}
-
-    return success;
-  } catch {
-    return false;
-  }
-}
-
 export interface HostsCleanResult {
   found: boolean;
   cleaned: boolean;
@@ -184,18 +133,17 @@ export function cleanHostsFile(): HostsCleanResult {
     let found = false;
 
     for (const entry of PROXY_HOSTS_ENTRIES) {
-      // Check with various spacing patterns
-      const patterns = [
-        entry,
-        entry.replace('127.0.0.1 ', '127.0.0.1  '),
-        entry.replace('127.0.0.1  ', '127.0.0.1 '),
-      ];
-      for (const pattern of patterns) {
-        if (content.includes(pattern)) {
+      const domain = entry.trim().split(' ').pop() || '';
+      const lines = content.split('\n');
+      const newLines = lines.filter(line => {
+        const trimmed = line.trim();
+        if (trimmed.includes(domain) && !trimmed.startsWith('#')) {
           found = true;
-          content = content.split('\n').filter(line => line.trim() !== pattern.trim()).join('\n');
+          return false;
         }
-      }
+        return true;
+      });
+      content = newLines.join('\n');
     }
 
     if (!found) {
@@ -205,57 +153,10 @@ export function cleanHostsFile(): HostsCleanResult {
     // Clean up multiple blank lines
     content = content.replace(/\n{3,}/g, '\n\n');
 
-    // Try direct write first
-    try {
-      fs.writeFileSync(hostsPath, content, 'utf-8');
-      return { found: true, cleaned: true };
-    } catch {
-      // Direct write failed (no admin) — try UAC elevation on Windows
-      if (platform() === 'win32') {
-        return cleanHostsFileWithUAC(content);
-      }
-      return { found: true, cleaned: false, error: 'Requires admin privileges' };
-    }
-  } catch {
-    return { found: false, cleaned: false, error: 'Could not read hosts file' };
-  }
-}
-
-function cleanHostsFileWithUAC(content: string): HostsCleanResult {
-  try {
-    const tmpFile = path.join(process.env.TEMP || '', 'antigravity_hosts.txt');
-    fs.writeFileSync(tmpFile, content, 'utf-8');
-
-    // Use forward slashes for PowerShell compatibility
-    const psTmpFile = tmpFile.replace(/\\/g, '/');
-    const psHostsFile = 'C:/Windows/System32/drivers/etc/hosts';
-    const psCommand = `Copy-Item -Path '${psTmpFile}' -Destination '${psHostsFile}' -Force`;
-    const result = runElevated(psCommand);
-
-    try { fs.unlinkSync(tmpFile); } catch {}
-
-    if (!result) {
-      // Check error log for details
-      let errorMsg = 'UAC elevation denied or failed';
-      try {
-        const errLog = path.join(process.env.TEMP || '', 'antigravity_elevate_error.log');
-        const errContent = fs.readFileSync(errLog, 'utf-8').trim();
-        if (errContent) errorMsg = errContent;
-        fs.unlinkSync(errLog);
-      } catch {}
-      return { found: true, cleaned: false, error: errorMsg };
-    }
-
-    // Verify the cleanup worked
-    const verifyContent = fs.readFileSync('C:\\Windows\\System32\\drivers\\etc\\hosts', 'utf-8');
-    const stillHasEntries = PROXY_HOSTS_ENTRIES.some(e => verifyContent.includes(e.trim()));
-
-    if (stillHasEntries) {
-      return { found: true, cleaned: false, error: 'Hosts file was not updated' };
-    }
+    fs.writeFileSync(hostsPath, content, 'utf-8');
     return { found: true, cleaned: true };
   } catch {
-    return { found: true, cleaned: false, error: 'UAC elevation failed' };
+    return { found: true, cleaned: false, error: 'Could not modify hosts file. Run as Administrator.' };
   }
 }
 
@@ -269,79 +170,31 @@ export function setupHostsFile(): HostsCleanResult {
     const entriesToAdd: string[] = [];
 
     for (const entry of PROXY_HOSTS_ENTRIES) {
-      // Check if entry already exists (with any spacing)
-      const alreadyExists = content.includes('cloudcode-pa.googleapis.com') && entry.includes('cloudcode-pa.googleapis.com')
-        || content.includes('daily-cloudcode-pa.googleapis.com') && entry.includes('daily-cloudcode-pa.googleapis.com')
-        || content.includes('runtime.us-east-1.kiro.dev') && entry.includes('runtime.us-east-1.kiro.dev')
-        || (content.includes('kiro.dev') && !content.includes('daily-cloudcode') && entry.includes('kiro.dev') && !entry.includes('daily'));
+      const domain = entry.trim().split(' ').pop() || '';
+      const domainExists = content.split('\n').some(line => {
+        const trimmed = line.trim();
+        return trimmed.includes(domain) && !trimmed.startsWith('#');
+      });
 
-      if (!alreadyExists) {
+      if (!domainExists) {
         entriesToAdd.push(entry);
       }
     }
 
     if (entriesToAdd.length === 0) {
-      return { found: true, cleaned: true }; // Already set up
+      return { found: true, cleaned: true };
     }
 
-    // Add entries with a comment header
     const marker = '# Antigravity Proxy';
     if (!content.includes(marker)) {
       content = content.trimEnd() + '\n\n' + marker + '\n';
     }
     content = content.trimEnd() + '\n' + entriesToAdd.join('\n') + '\n';
 
-    // Try direct write first
-    try {
-      fs.writeFileSync(hostsPath, content, 'utf-8');
-      return { found: true, cleaned: true };
-    } catch {
-      // Direct write failed (no admin) — try UAC elevation on Windows
-      if (platform() === 'win32') {
-        return setupHostsFileWithUAC(content);
-      }
-      return { found: true, cleaned: false, error: 'Requires admin privileges' };
-    }
-  } catch {
-    return { found: false, cleaned: false, error: 'Could not read hosts file' };
-  }
-}
-
-function setupHostsFileWithUAC(content: string): HostsCleanResult {
-  try {
-    const tmpFile = path.join(process.env.TEMP || '', 'antigravity_hosts.txt');
-    fs.writeFileSync(tmpFile, content, 'utf-8');
-
-    // Use forward slashes for PowerShell compatibility
-    const psTmpFile = tmpFile.replace(/\\/g, '/');
-    const psHostsFile = 'C:/Windows/System32/drivers/etc/hosts';
-    const psCommand = `Copy-Item -Path '${psTmpFile}' -Destination '${psHostsFile}' -Force`;
-    const result = runElevated(psCommand);
-
-    try { fs.unlinkSync(tmpFile); } catch {}
-
-    if (!result) {
-      // Check error log for details
-      let errorMsg = 'UAC elevation denied or failed';
-      try {
-        const errLog = path.join(process.env.TEMP || '', 'antigravity_elevate_error.log');
-        const errContent = fs.readFileSync(errLog, 'utf-8').trim();
-        if (errContent) errorMsg = errContent;
-        fs.unlinkSync(errLog);
-      } catch {}
-      return { found: true, cleaned: false, error: errorMsg };
-    }
-
-    // Verify setup worked
-    const verifyContent = fs.readFileSync('C:\\Windows\\System32\\drivers\\etc\\hosts', 'utf-8');
-    const hasEntries = PROXY_HOSTS_ENTRIES.every(e => verifyContent.includes(e.trim().split(' ')[1]));
-
-    if (!hasEntries) {
-      return { found: true, cleaned: false, error: 'Hosts file was not updated' };
-    }
+    fs.writeFileSync(hostsPath, content, 'utf-8');
     return { found: true, cleaned: true };
   } catch {
-    return { found: true, cleaned: false, error: 'UAC elevation failed' };
+    return { found: true, cleaned: false, error: 'Could not modify hosts file. Run as Administrator.' };
   }
 }
 
