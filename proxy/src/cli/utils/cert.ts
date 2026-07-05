@@ -122,11 +122,13 @@ function runElevated(psCommand: string): boolean {
   if (platform() !== 'win32') return false;
 
   try {
-    // Create a VBScript that uses ShellExecute with "runas" to elevate silently
-    const vbsScript = `
-      Set objShell = CreateObject("Shell.Application")
-      objShell.ShellExecute "powershell.exe", "-NoProfile -NonInteractive -Command ""${psCommand.replace(/"/g, '""')}""", "", "runas", 1
-    `.trim();
+    // Write PowerShell command to a temp .ps1 file
+    const psFile = path.join(process.env.TEMP || '', 'antigravity_elevate.ps1');
+    fs.writeFileSync(psFile, psCommand, 'utf-8');
+
+    // Create VBScript that runs the .ps1 file with elevation
+    const vbsScript = `Set objShell = CreateObject("Shell.Application")
+objShell.ShellExecute "powershell.exe", "-NoProfile -ExecutionPolicy Bypass -File ""${psFile}""", "", "runas", 1`;
 
     const vbsFile = path.join(process.env.TEMP || '', 'antigravity_elevate.vbs');
     fs.writeFileSync(vbsFile, vbsScript, 'utf-8');
@@ -136,6 +138,7 @@ function runElevated(psCommand: string): boolean {
 
     // Clean up
     try { fs.unlinkSync(vbsFile); } catch {}
+    try { fs.unlinkSync(psFile); } catch {}
 
     return true;
   } catch {
