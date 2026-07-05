@@ -1,15 +1,15 @@
 import { execSync, spawn } from 'child_process';
 import { platform } from 'os';
 import { isProxyRunning, stopProxy, startProxy, waitForHealth } from '../utils/process.js';
-import { certExists, isCertTrusted, trustCert, untrustCert } from '../utils/cert.js';
+import { isCertTrusted, trustCert, untrustCert, cleanHostsFile } from '../utils/cert.js';
 import { header, section, ok, warn, info, confirm, divider } from '../ui.js';
 
 type Mode = 'proxy' | 'simple';
 
 function detectMode(): Mode {
-  // Proxy mode = certs have been generated (proxy was set up)
-  // Not just "is it running right now" — the user configured the proxy
-  if (certExists()) {
+  // Proxy mode = cert is trusted in OS store OR proxy is running
+  // The cert files may exist but if not trusted, we're in simple mode
+  if (isCertTrusted() || isProxyRunning()) {
     return 'proxy';
   }
   return 'simple';
@@ -53,7 +53,8 @@ export async function switchCommand(): Promise<void> {
     console.log(`  To switch to Simple mode, the following will happen:`);
     console.log(`  1. Stop proxy process`);
     console.log(`  2. Remove certificate from OS trust store`);
-    console.log(`  3. Launch Antigravity normally (direct Google access)\n`);
+    console.log(`  3. Clean hosts file (remove proxy routing)`);
+    console.log(`  4. Launch Antigravity normally (direct Google access)\n`);
 
     const proceed = await confirm('Switch to Simple mode?', true);
     if (!proceed) {
@@ -72,6 +73,17 @@ export async function switchCommand(): Promise<void> {
     section('Removing certificate from trust store');
     untrustCert();
     console.log(`  ${ok('Certificate removed')}`);
+
+    section('Cleaning hosts file');
+    const hostsResult = cleanHostsFile();
+    if (hostsResult.found && hostsResult.cleaned) {
+      console.log(`  ${ok('Proxy routing entries removed from hosts file')}`);
+    } else if (hostsResult.found && !hostsResult.cleaned) {
+      console.log(`  ${warn(`Found proxy entries but could not remove: ${hostsResult.error}`)}`);
+      console.log(`  ${info('Run as Administrator to clean hosts file, or manually edit C:\\Windows\\System32\\drivers\\etc\\hosts')}`);
+    } else {
+      console.log(`  ${ok('No proxy routing entries found in hosts file')}`);
+    }
 
     divider();
     console.log(`  ${ok('Switched to Simple mode')}`);

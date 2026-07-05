@@ -84,8 +84,15 @@ export async function startCommand(opts: StartOptions): Promise<void> {
 
     // Clean up hosts file entries that route traffic to the proxy
     section('Cleaning up proxy routing');
-    cleanHostsFile();
-    console.log(`  ${ok('Hosts file cleaned')}`);
+    const hostsResult = cleanHostsFile();
+    if (hostsResult.found && hostsResult.cleaned) {
+      console.log(`  ${ok('Proxy routing entries removed from hosts file')}`);
+    } else if (hostsResult.found && !hostsResult.cleaned) {
+      console.log(`  ${warn(`Found proxy entries but could not remove: ${hostsResult.error}`)}`);
+      console.log(`  ${info('Run as Administrator to clean hosts file')}`);
+    } else {
+      console.log(`  ${ok('No proxy routing entries found in hosts file')}`);
+    }
 
     console.log(`  ${arrow('Launching Antigravity desktop')}`);
     if (launchAntigravityDesktop()) {

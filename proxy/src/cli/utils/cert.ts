@@ -112,35 +112,90 @@ export function trustCert(): void {
 const PROXY_HOSTS_ENTRIES = [
   '127.0.0.1 cloudcode-pa.googleapis.com',
   '127.0.0.1 daily-cloudcode-pa.googleapis.com',
-  '127.0.0.1 runtime.us-east-1.kiro.dev',
-  '127.0.0.1 kiro.dev',
-  '127.0.0.1 app.kiro.dev',
+  '127.0.0.1  runtime.us-east-1.kiro.dev',
+  '127.0.0.1  kiro.dev',
+  '127.0.0.1  app.kiro.dev',
 ];
 
-export function cleanHostsFile(): void {
+export interface HostsCleanResult {
+  found: boolean;
+  cleaned: boolean;
+  error?: string;
+}
+
+export function cleanHostsFile(): HostsCleanResult {
   const hostsPath = platform() === 'win32'
     ? 'C:\\Windows\\System32\\drivers\\etc\\hosts'
     : '/etc/hosts';
 
   try {
     let content = fs.readFileSync(hostsPath, 'utf-8');
-    let changed = false;
+    let found = false;
 
     for (const entry of PROXY_HOSTS_ENTRIES) {
-      const regex = new RegExp(`^\\s*${entry.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'gm');
-      if (regex.test(content)) {
-        content = content.replace(regex, '');
-        changed = true;
+      // Check with various spacing patterns
+      const patterns = [
+        entry,
+        entry.replace('127.0.0.1 ', '127.0.0.1  '),
+        entry.replace('127.0.0.1  ', '127.0.0.1 '),
+      ];
+      for (const pattern of patterns) {
+        if (content.includes(pattern)) {
+          found = true;
+          content = content.split('\n').filter(line => line.trim() !== pattern.trim()).join('\n');
+        }
       }
     }
 
-    if (changed) {
-      // Clean up multiple blank lines
-      content = content.replace(/\n{3,}/g, '\n\n');
+    if (!found) {
+      return { found: false, cleaned: false };
+    }
+
+    // Clean up multiple blank lines
+    content = content.replace(/\n{3,}/g, '\n\n');
+
+    // Try direct write first
+    try {
       fs.writeFileSync(hostsPath, content, 'utf-8');
+      return { found: true, cleaned: true };
+    } catch {
+      // Direct write failed (no admin) — try UAC elevation on Windows
+      if (platform() === 'win32') {
+        return cleanHostsFileWithUAC(content);
+      }
+      return { found: true, cleaned: false, error: 'Requires admin privileges' };
     }
   } catch {
-    // Hosts file may not be writable — continue silently
+    return { found: false, cleaned: false, error: 'Could not read hosts file' };
+  }
+}
+
+function cleanHostsFileWithUAC(content: string): HostsCleanResult {
+  try {
+    // Write cleaned content to a temp file, then use UAC to copy it
+    const tmpFile = path.join(process.env.TEMP || '', 'antigravity_hosts_clean.txt');
+    fs.writeFileSync(tmpFile, content, 'utf-8');
+
+    // Use PowerShell with Start-Process -Verb RunAs to overwrite hosts file
+    const psCommand = `Copy-Item -Path '${tmpFile}' -Destination 'C:\\Windows\\System32\\drivers\\etc\\hosts' -Force`;
+    execSync(
+      `powershell -NoProfile -Command "Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile -Command \\"${psCommand.replace(/"/g, '\\"')}\\"' -Wait"`,
+      { stdio: 'pipe', timeout: 30000 }
+    );
+
+    // Clean up temp file
+    try { fs.unlinkSync(tmpFile); } catch {}
+
+    // Verify the cleanup worked
+    const verifyContent = fs.readFileSync('C:\\Windows\\System32\\drivers\\etc\\hosts', 'utf-8');
+    const stillHasEntries = PROXY_HOSTS_ENTRIES.some(e => verifyContent.includes(e.trim()));
+
+    if (stillHasEntries) {
+      return { found: true, cleaned: false, error: 'UAC elevation may have been denied' };
+    }
+    return { found: true, cleaned: true };
+  } catch {
+    return { found: true, cleaned: false, error: 'UAC elevation failed' };
   }
 }
 
