@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { execSync, spawn, exec } from 'child_process';
 import { platform } from 'os';
-import { certExists, generateCerts, trustCert, cleanHostsFile } from '../utils/cert.js';
+import { certExists, generateCerts, trustCert, cleanHostsFile, setupHostsFile } from '../utils/cert.js';
 import { killProcessesOnPorts } from '../utils/port.js';
 import { startProxy, isProxyRunning, waitForHealth } from '../utils/process.js';
 import { openUrl } from '../utils/open.js';
@@ -169,6 +169,18 @@ export async function startCommand(opts: StartOptions): Promise<void> {
   if (!portsToCheck.includes(proxyPort)) portsToCheck.push(proxyPort);
   killProcessesOnPorts(portsToCheck);
   console.log(`  ${ok('Ports cleared')}`);
+
+  section('Setting up proxy routing');
+  const hostsSpinner = startSpinner('Configuring hosts file');
+  const hostsResult = setupHostsFile();
+  if (hostsResult.found && hostsResult.cleaned) {
+    succeedSpinner(hostsSpinner, 'Proxy routing entries added to hosts file');
+  } else if (hostsResult.found && !hostsResult.cleaned) {
+    warnSpinner(hostsSpinner, `Could not add routing entries: ${hostsResult.error}`);
+    console.log(`  ${info('Run as Administrator to update hosts file')}`);
+  } else {
+    succeedSpinner(hostsSpinner, 'Hosts file already configured');
+  }
 
   const envDir = PROXY_DIR;
   const envPath = path.join(envDir, '.env');

@@ -1,7 +1,7 @@
 import { execSync, spawn } from 'child_process';
 import { platform } from 'os';
 import { isProxyRunning, stopProxy, startProxy, waitForHealth } from '../utils/process.js';
-import { isCertTrusted, trustCert, untrustCert, cleanHostsFile } from '../utils/cert.js';
+import { isCertTrusted, trustCert, untrustCert, cleanHostsFile, setupHostsFile } from '../utils/cert.js';
 import { header, section, ok, warn, info, confirm, divider } from '../ui.js';
 
 type Mode = 'proxy' | 'simple';
@@ -99,8 +99,9 @@ export async function switchCommand(): Promise<void> {
 
     console.log(`  To switch to Proxy mode, the following will happen:`);
     console.log(`  1. Trust TLS certificate in OS store`);
-    console.log(`  2. Start proxy on port 443`);
-    console.log(`  3. Launch Antigravity through proxy\n`);
+    console.log(`  2. Add proxy routing to hosts file`);
+    console.log(`  3. Start proxy on port 443`);
+    console.log(`  4. Launch Antigravity through proxy\n`);
 
     const proceed = await confirm('Switch to Proxy mode?', true);
     if (!proceed) {
@@ -115,6 +116,17 @@ export async function switchCommand(): Promise<void> {
     } catch (e: any) {
       console.log(`  ${warn(`Certificate trust failed: ${e.message}`)}`);
       console.log(`  ${info('Continuing anyway...')}`);
+    }
+
+    section('Setting up hosts file');
+    const hostsResult = setupHostsFile();
+    if (hostsResult.found && hostsResult.cleaned) {
+      console.log(`  ${ok('Proxy routing entries added to hosts file')}`);
+    } else if (hostsResult.found && !hostsResult.cleaned) {
+      console.log(`  ${warn(`Could not add routing entries: ${hostsResult.error}`)}`);
+      console.log(`  ${info('Run as Administrator to update hosts file')}`);
+    } else {
+      console.log(`  ${ok('Hosts file already configured')}`);
     }
 
     section('Starting proxy');

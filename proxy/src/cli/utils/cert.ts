@@ -199,6 +199,80 @@ function cleanHostsFileWithUAC(content: string): HostsCleanResult {
   }
 }
 
+export function setupHostsFile(): HostsCleanResult {
+  const hostsPath = platform() === 'win32'
+    ? 'C:\\Windows\\System32\\drivers\\etc\\hosts'
+    : '/etc/hosts';
+
+  try {
+    let content = fs.readFileSync(hostsPath, 'utf-8');
+    const entriesToAdd: string[] = [];
+
+    for (const entry of PROXY_HOSTS_ENTRIES) {
+      // Check if entry already exists (with any spacing)
+      const alreadyExists = content.includes('cloudcode-pa.googleapis.com') && entry.includes('cloudcode-pa.googleapis.com')
+        || content.includes('daily-cloudcode-pa.googleapis.com') && entry.includes('daily-cloudcode-pa.googleapis.com')
+        || content.includes('runtime.us-east-1.kiro.dev') && entry.includes('runtime.us-east-1.kiro.dev')
+        || (content.includes('kiro.dev') && !content.includes('daily-cloudcode') && entry.includes('kiro.dev') && !entry.includes('daily'));
+
+      if (!alreadyExists) {
+        entriesToAdd.push(entry);
+      }
+    }
+
+    if (entriesToAdd.length === 0) {
+      return { found: true, cleaned: true }; // Already set up
+    }
+
+    // Add entries with a comment header
+    const marker = '# Antigravity Proxy';
+    if (!content.includes(marker)) {
+      content = content.trimEnd() + '\n\n' + marker + '\n';
+    }
+    content = content.trimEnd() + '\n' + entriesToAdd.join('\n') + '\n';
+
+    // Try direct write first
+    try {
+      fs.writeFileSync(hostsPath, content, 'utf-8');
+      return { found: true, cleaned: true };
+    } catch {
+      // Direct write failed (no admin) — try UAC elevation on Windows
+      if (platform() === 'win32') {
+        return setupHostsFileWithUAC(content);
+      }
+      return { found: true, cleaned: false, error: 'Requires admin privileges' };
+    }
+  } catch {
+    return { found: false, cleaned: false, error: 'Could not read hosts file' };
+  }
+}
+
+function setupHostsFileWithUAC(content: string): HostsCleanResult {
+  try {
+    const tmpFile = path.join(process.env.TEMP || '', 'antigravity_hosts_setup.txt');
+    fs.writeFileSync(tmpFile, content, 'utf-8');
+
+    const psCommand = `Copy-Item -Path '${tmpFile}' -Destination 'C:\\Windows\\System32\\drivers\\etc\\hosts' -Force`;
+    execSync(
+      `powershell -NoProfile -Command "Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile -Command \\"${psCommand.replace(/"/g, '\\"')}\\"' -Wait"`,
+      { stdio: 'pipe', timeout: 30000 }
+    );
+
+    try { fs.unlinkSync(tmpFile); } catch {}
+
+    // Verify setup worked
+    const verifyContent = fs.readFileSync('C:\\Windows\\System32\\drivers\\etc\\hosts', 'utf-8');
+    const hasEntries = PROXY_HOSTS_ENTRIES.every(e => verifyContent.includes(e.trim().split(' ')[1]));
+
+    if (!hasEntries) {
+      return { found: true, cleaned: false, error: 'UAC elevation may have been denied' };
+    }
+    return { found: true, cleaned: true };
+  } catch {
+    return { found: true, cleaned: false, error: 'UAC elevation failed' };
+  }
+}
+
 export function untrustCert(): void {
   const p = platform();
   if (certExists()) {
