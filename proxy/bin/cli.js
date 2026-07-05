@@ -35,22 +35,25 @@ function elevateAndRun() {
   // Build the full command line for the elevated process
   const nodeExe = process.execPath;
   const scriptPath = process.argv[1];
-  const fullArgs = [scriptPath, ...args].map(a => `"${a}"`).join(' ');
 
-  // Launch elevated process in a new window (no -Wait)
-  // This lets the original terminal exit cleanly
+  // Build args array for PowerShell (properly escaped)
+  const psArgs = [scriptPath, ...args].map(a => `'${a.replace(/'/g, "''")}'`).join(',');
+
   try {
-    const psCmd = `Start-Process -FilePath '${nodeExe}' -ArgumentList '${fullArgs}' -Verb RunAs -WindowStyle Normal`;
-    spawn('powershell', ['-NoProfile', '-Command', psCmd], {
+    // Start-Process -Verb RunAs launches UAC prompt and runs in new window
+    // Using -PassThru to get the process object, but not -Wait so we exit cleanly
+    const psCmd = `Start-Process -FilePath '${nodeExe}' -ArgumentList @(${psArgs}) -Verb RunAs -PassThru | Out-Null`;
+    execSync(`powershell -NoProfile -Command "${psCmd.replace(/"/g, '\\"')}"`, {
       stdio: 'ignore',
-      detached: true,
-      windowsHide: true,
-    }).unref();
+      timeout: 30000,
+    });
     return true;
   } catch {
-    console.log('  Failed to elevate. Run this terminal as Administrator.');
+    // UAC was denied or failed
+    console.log('  Administrator access denied or failed.');
+    console.log('  Please run this terminal as Administrator manually.');
     console.log('');
-    return true; // Exit gracefully
+    return true;
   }
 }
 
