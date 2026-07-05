@@ -122,9 +122,16 @@ function runElevated(psCommand: string): boolean {
   if (platform() !== 'win32') return false;
 
   try {
-    // Write PowerShell command to a temp .ps1 file
+    // Write PowerShell command to a temp .ps1 file with error logging
     const psFile = path.join(process.env.TEMP || '', 'antigravity_elevate.ps1');
-    fs.writeFileSync(psFile, psCommand, 'utf-8');
+    const logFile = path.join(process.env.TEMP || '', 'antigravity_elevate.log');
+    const psContent = `try {
+  ${psCommand}
+  "SUCCESS" | Out-File -FilePath "${logFile}" -Encoding UTF8
+} catch {
+  "ERROR: $($_.Exception.Message)" | Out-File -FilePath "${logFile}" -Encoding UTF8
+}`;
+    fs.writeFileSync(psFile, psContent, 'utf-8');
 
     // Create VBScript that runs the .ps1 file with elevation
     const vbsScript = `Set objShell = CreateObject("Shell.Application")
@@ -136,11 +143,26 @@ objShell.ShellExecute "powershell.exe", "-NoProfile -ExecutionPolicy Bypass -Fil
     // Run VBScript and wait for it to complete
     execSync(`cscript //nologo "${vbsFile}"`, { stdio: 'pipe', timeout: 30000 });
 
+    // Check log file for result
+    let success = false;
+    try {
+      const log = fs.readFileSync(logFile, 'utf-8').trim();
+      success = log === 'SUCCESS';
+      if (!success && log) {
+        // Log the error for debugging
+        try {
+          const errLog = path.join(process.env.TEMP || '', 'antigravity_elevate_error.log');
+          fs.writeFileSync(errLog, `Command: ${psCommand}\nResult: ${log}`, 'utf-8');
+        } catch {}
+      }
+    } catch {}
+
     // Clean up
     try { fs.unlinkSync(vbsFile); } catch {}
     try { fs.unlinkSync(psFile); } catch {}
+    try { fs.unlinkSync(logFile); } catch {}
 
-    return true;
+    return success;
   } catch {
     return false;
   }
@@ -204,13 +226,24 @@ function cleanHostsFileWithUAC(content: string): HostsCleanResult {
     const tmpFile = path.join(process.env.TEMP || '', 'antigravity_hosts.txt');
     fs.writeFileSync(tmpFile, content, 'utf-8');
 
-    const psCommand = `Copy-Item -Path '${tmpFile}' -Destination 'C:\\Windows\\System32\\drivers\\etc\\hosts' -Force`;
+    // Use forward slashes for PowerShell compatibility
+    const psTmpFile = tmpFile.replace(/\\/g, '/');
+    const psHostsFile = 'C:/Windows/System32/drivers/etc/hosts';
+    const psCommand = `Copy-Item -Path '${psTmpFile}' -Destination '${psHostsFile}' -Force`;
     const result = runElevated(psCommand);
 
     try { fs.unlinkSync(tmpFile); } catch {}
 
     if (!result) {
-      return { found: true, cleaned: false, error: 'UAC elevation denied or failed' };
+      // Check error log for details
+      let errorMsg = 'UAC elevation denied or failed';
+      try {
+        const errLog = path.join(process.env.TEMP || '', 'antigravity_elevate_error.log');
+        const errContent = fs.readFileSync(errLog, 'utf-8').trim();
+        if (errContent) errorMsg = errContent;
+        fs.unlinkSync(errLog);
+      } catch {}
+      return { found: true, cleaned: false, error: errorMsg };
     }
 
     // Verify the cleanup worked
@@ -279,13 +312,24 @@ function setupHostsFileWithUAC(content: string): HostsCleanResult {
     const tmpFile = path.join(process.env.TEMP || '', 'antigravity_hosts.txt');
     fs.writeFileSync(tmpFile, content, 'utf-8');
 
-    const psCommand = `Copy-Item -Path '${tmpFile}' -Destination 'C:\\Windows\\System32\\drivers\\etc\\hosts' -Force`;
+    // Use forward slashes for PowerShell compatibility
+    const psTmpFile = tmpFile.replace(/\\/g, '/');
+    const psHostsFile = 'C:/Windows/System32/drivers/etc/hosts';
+    const psCommand = `Copy-Item -Path '${psTmpFile}' -Destination '${psHostsFile}' -Force`;
     const result = runElevated(psCommand);
 
     try { fs.unlinkSync(tmpFile); } catch {}
 
     if (!result) {
-      return { found: true, cleaned: false, error: 'UAC elevation denied or failed' };
+      // Check error log for details
+      let errorMsg = 'UAC elevation denied or failed';
+      try {
+        const errLog = path.join(process.env.TEMP || '', 'antigravity_elevate_error.log');
+        const errContent = fs.readFileSync(errLog, 'utf-8').trim();
+        if (errContent) errorMsg = errContent;
+        fs.unlinkSync(errLog);
+      } catch {}
+      return { found: true, cleaned: false, error: errorMsg };
     }
 
     // Verify setup worked
