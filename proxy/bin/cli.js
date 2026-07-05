@@ -28,26 +28,33 @@ function elevateAndRun() {
   if (platform() !== 'win32' || !ADMIN_COMMANDS.includes(cmd)) return false;
   if (isAdmin()) return false;
 
-  console.log('\n  This command requires Administrator privileges.\n');
+  console.log('');
+  console.log('  Requesting Administrator access...');
+  console.log('');
 
-  // Build the full command line
+  // Build the full command line for the elevated process
   const nodeExe = process.execPath;
   const scriptPath = process.argv[1];
   const fullArgs = [scriptPath, ...args].map(a => `"${a}"`).join(' ');
 
-  // Use cmd /c start /wait to run elevated and wait for completion
-  // This shows UAC, runs in a new console, and blocks until done
+  // Launch elevated process in a new window (no -Wait)
+  // This lets the original terminal exit cleanly
   try {
-    const psCmd = `Start-Process -FilePath '${nodeExe}' -ArgumentList '${fullArgs}' -Verb RunAs -Wait`;
-    execSync(`powershell -NoProfile -Command "${psCmd}"`, { stdio: 'inherit', timeout: 300000 });
+    const psCmd = `Start-Process -FilePath '${nodeExe}' -ArgumentList '${fullArgs}' -Verb RunAs -WindowStyle Normal`;
+    spawn('powershell', ['-NoProfile', '-Command', psCmd], {
+      stdio: 'ignore',
+      detached: true,
+      windowsHide: true,
+    }).unref();
     return true;
   } catch {
-    console.log('  Failed to elevate. Run this terminal as Administrator.\n');
-    process.exit(1);
+    console.log('  Failed to elevate. Run this terminal as Administrator.');
+    console.log('');
+    return true; // Exit gracefully
   }
 }
 
-// Try to elevate if needed — this may exit the process
+// Try to elevate if needed — exits the original terminal cleanly
 if (elevateAndRun()) {
   process.exit(0);
 }
@@ -142,3 +149,15 @@ program
   .action(removeCommand);
 
 program.parse();
+
+// When running elevated in a new terminal, pause before closing
+// so the user can see the output
+if (platform() === 'win32' && isAdmin()) {
+  console.log('');
+  const readline = await import('readline');
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  rl.question('  Press any key to close...', () => {
+    rl.close();
+    process.exit(0);
+  });
+}
