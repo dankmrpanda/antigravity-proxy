@@ -109,6 +109,41 @@ export function trustCert(): void {
   }
 }
 
+const PROXY_HOSTS_ENTRIES = [
+  '127.0.0.1 cloudcode-pa.googleapis.com',
+  '127.0.0.1 daily-cloudcode-pa.googleapis.com',
+  '127.0.0.1 runtime.us-east-1.kiro.dev',
+  '127.0.0.1 kiro.dev',
+  '127.0.0.1 app.kiro.dev',
+];
+
+export function cleanHostsFile(): void {
+  const hostsPath = platform() === 'win32'
+    ? 'C:\\Windows\\System32\\drivers\\etc\\hosts'
+    : '/etc/hosts';
+
+  try {
+    let content = fs.readFileSync(hostsPath, 'utf-8');
+    let changed = false;
+
+    for (const entry of PROXY_HOSTS_ENTRIES) {
+      const regex = new RegExp(`^\\s*${entry.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'gm');
+      if (regex.test(content)) {
+        content = content.replace(regex, '');
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      // Clean up multiple blank lines
+      content = content.replace(/\n{3,}/g, '\n\n');
+      fs.writeFileSync(hostsPath, content, 'utf-8');
+    }
+  } catch {
+    // Hosts file may not be writable — continue silently
+  }
+}
+
 export function untrustCert(): void {
   if (!certExists()) {
     return;
@@ -147,6 +182,9 @@ export function untrustCert(): void {
       // Certificate may not exist — continue silently
     }
   }
+
+  // Also clean up hosts file entries that route traffic to the proxy
+  cleanHostsFile();
 }
 
 export interface CertInfo {
