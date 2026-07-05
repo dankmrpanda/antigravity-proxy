@@ -14,6 +14,8 @@ import { logsCommand } from '../dist/cli/commands/logs.js';
 import { certsCommand } from '../dist/cli/commands/certs.js';
 import { setupCommand } from '../dist/cli/commands/setup.js';
 import { shellCommand } from '../dist/cli/commands/shell.js';
+import { switchCommand } from '../dist/cli/commands/switch.js';
+import { removeCommand } from '../dist/cli/commands/remove.js';
 
 const program = new Command();
 
@@ -80,5 +82,15 @@ program
   .description('Interactive monitoring shell')
   .option('-p, --port <port>', 'proxy port', '443')
   .action(shellCommand);
+
+program
+  .command('switch')
+  .description('Switch between proxy and simple mode')
+  .action(switchCommand);
+
+program
+  .command('remove')
+  .description('Remove proxy artifacts and clean up')
+  .action(removeCommand);
 
 program.parse();
