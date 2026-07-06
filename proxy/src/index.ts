@@ -8,7 +8,7 @@ import { config } from './config.js';
 import { logger } from './logger.js';
 import { validateApiKey } from './auth.js';
 import { streamResponse, saveReasoning, injectReasoning, extractConvId } from './engine.js';
-import { reloadRouter } from './engine.js';
+import { reloadRouter, getRouter } from './engine.js';
 import { mapContentsToMessages, mapTools, mapGenerationConfig } from './mapper.js';
 import { requestStore } from './request-store.js';
 import { createDashboardHandler } from './dashboard.js';
@@ -25,6 +25,8 @@ import { getSessionId, setSessionId } from './session-store.js';
 import { safeWrite } from './utils/safe-write.js';
 import { formatErrorResponse } from './utils/error-response.js';
 import { injectContext } from './context-injector.js';
+import { compactIfNeeded, getCompactionConfig } from './compaction.js';
+import { loadContextWindowsFromModels } from './context-windows.js';
 import type { Content, Tool, GenerationConfig } from './types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -410,6 +412,16 @@ async function handleStreamGenerate(req: http2.Http2ServerRequest, res: http2.Ht
   // Inject context BEFORE counting tokens so dashboard shows actual usage
   injectContext(mapped, config.contextStripMode);
 
+  // Compaction: if context exceeds the model's window, summarize old messages
+  const compactionConfig = getCompactionConfig();
+  if (compactionConfig.enabled) {
+    const compacted = await compactIfNeeded(mapped, model, getRouter());
+    if (compacted !== mapped) {
+      mapped.messages = compacted.messages;
+      logger.info(`[compaction] Context compacted: ${mapped.messages.length} messages`);
+    }
+  }
+
   // Calculate actual tokens being sent to provider (post-stripping + post-injection)
   const actualPromptText = JSON.stringify({ system: mapped.system, messages: mapped.messages, tools: mapped.tools });
   const actualPromptTokens = estTokens(actualPromptText);
@@ -754,6 +766,14 @@ async function main(): Promise<void> {
   db.init();
   db.clearLogs();
   setRateLimitConfig({ globalMax: config.rateLimitGlobal, providerMax: config.rateLimitProvider, windowMs: config.rateLimitWindow });
+  // Load context window sizes for compaction decisions
+  try {
+    const cwPath = path.resolve(__dirname, '..', 'context-windows.json');
+    if (fs.existsSync(cwPath)) {
+      const cwData = JSON.parse(fs.readFileSync(cwPath, 'utf-8'));
+      loadContextWindowsFromModels(cwData);
+    }
+  } catch { /* no context-windows.json is fine — defaults apply */ }
   logger.info(`=== Antigravity Proxy (${config.provider}) ===`);
 
   if (!validateApiKey()) process.exit(1);

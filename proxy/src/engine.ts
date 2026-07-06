@@ -98,7 +98,7 @@ export function injectReasoning(messages: OpenAIMessage[], convId: string): void
 
 let router: Router;
 
-function getRouter(): Router {
+export function getRouter(): Router {
   if (!router) {
     router = new Router(config.providers, modelResolver, { retries: config.retries, backoffMs: config.backoffMs });
   }
