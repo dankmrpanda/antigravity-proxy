@@ -112,89 +112,108 @@ export class Router {
         continue;
       }
 
-      let resolvedModel = this.modelResolver.resolve(model, providerId);
-      if (!resolvedModel || resolvedModel === model) {
-        // resolve() is a name-translator — when it returns the model unchanged,
-        // check the provider map directly for an explicit per-model override.
-        // Only fall back to provider/global defaults if NO per-model mapping exists.
-        const providerMap = this.modelResolver.getProviderMap();
-        const short = model.replace(/^models\//, '');
-        const explicitMapping = providerMap[model]?.[providerId]
-          || providerMap[short]?.[providerId];
-        if (explicitMapping) {
-          resolvedModel = Array.isArray(explicitMapping) ? explicitMapping[0] : explicitMapping;
-        } else {
-          // Reverse lookup: model starts with config key OR config key starts with model
-          let parentKey: string | null = null;
-          for (const key of Object.keys(providerMap)) {
-            if (key === 'default' || key === short) continue;
-            if (short.startsWith(key + '-') || key.startsWith(short + '-')) {
-              parentKey = key;
-              break;
-            }
-          }
-          const parentMapping = parentKey ? providerMap[parentKey]?.[providerId] : undefined;
-          if (parentMapping) {
-            resolvedModel = Array.isArray(parentMapping) ? parentMapping[0] : parentMapping;
+      // Model fallback: try fallback models for this provider before moving to next
+      const fallbackModels = this.modelResolver.getFallbackModels(model, providerId);
+      let providerFullyFailed = false;
+
+      for (let modelIdx = 0; modelIdx < fallbackModels.length; modelIdx++) {
+        const candidateModel = fallbackModels[modelIdx];
+        let resolvedModel = candidateModel;
+
+        // Only run the complex resolution when using the primary (first) model.
+        // Fallback models are already provider-specific strings from the config.
+        if (modelIdx === 0) {
+          const primaryResolved = this.modelResolver.resolve(model, providerId);
+          if (primaryResolved && primaryResolved !== model) {
+            resolvedModel = primaryResolved;
           } else {
-            const providerDefault = this.modelResolver.getDefaultModel(providerId);
-            if (providerDefault) {
-              resolvedModel = providerDefault;
-            } else if (this.modelResolver.defaultModel) {
-              resolvedModel = this.modelResolver.defaultModel;
+            const providerMap = this.modelResolver.getProviderMap();
+            const short = model.replace(/^models\//, '');
+            const explicitMapping = providerMap[model]?.[providerId]
+              || providerMap[short]?.[providerId];
+            if (explicitMapping) {
+              resolvedModel = Array.isArray(explicitMapping) ? explicitMapping[0] : explicitMapping;
+            } else {
+              let parentKey: string | null = null;
+              for (const key of Object.keys(providerMap)) {
+                if (key === 'default' || key === short) continue;
+                if (short.startsWith(key + '-') || key.startsWith(short + '-')) {
+                  parentKey = key;
+                  break;
+                }
+              }
+              const parentMapping = parentKey ? providerMap[parentKey]?.[providerId] : undefined;
+              if (parentMapping) {
+                resolvedModel = Array.isArray(parentMapping) ? parentMapping[0] : parentMapping;
+              } else {
+                const providerDefault = this.modelResolver.getDefaultModel(providerId);
+                if (providerDefault) {
+                  resolvedModel = providerDefault;
+                } else if (this.modelResolver.defaultModel) {
+                  resolvedModel = this.modelResolver.defaultModel;
+                }
+              }
             }
           }
         }
-      }
-      logger.info(`[router] Trying ${providerId} → ${resolvedModel} (from ${model})`);
 
-      let hasStreamedData = false;
+        const isFallbackModel = modelIdx > 0;
+        if (isFallbackModel) {
+          logger.info(`[router] ${providerId} trying fallback model ${modelIdx + 1}/${fallbackModels.length}: ${resolvedModel}`);
+        } else {
+          logger.info(`[router] Trying ${providerId} → ${resolvedModel} (from ${model})`);
+        }
 
-      for (let attempt = 0; attempt <= perProviderRetries; attempt++) {
-        yield { type: 'attempt', provider: providerId, resolvedModel, attempt: attempt + 1, status: attempt === 0 ? 'trying' : 'retrying' };
-        try {
-          const gen = adapter.stream(resolvedModel, messages, tools, config, combinedSignal, system);
-          for await (const chunk of gen) {
-            if (chunk.type === 'error') throw new Error(chunk.content || 'provider error');
-            hasStreamedData = true;
-            yield { ...chunk, provider: providerId, resolvedModel };
-          }
-          logger.info(`[router] ${providerId} succeeded`);
-          return;
-        } catch (err: any) {
+        let hasStreamedData = false;
+
+        for (let attempt = 0; attempt <= perProviderRetries; attempt++) {
+          yield { type: 'attempt', provider: providerId, resolvedModel, attempt: attempt + 1, status: attempt === 0 ? 'trying' : 'retrying', ...(isFallbackModel ? { modelFallback: true } : {}) };
+          try {
+            const gen = adapter.stream(resolvedModel, messages, tools, config, combinedSignal, system);
+            for await (const chunk of gen) {
+              if (chunk.type === 'error') throw new Error(chunk.content || 'provider error');
+              hasStreamedData = true;
+              yield { ...chunk, provider: providerId, resolvedModel };
+            }
+            logger.info(`[router] ${providerId} succeeded with ${resolvedModel}`);
+            return;
+          } catch (err: any) {
             if (combinedSignal.aborted) throw err;
 
-          // If we already yielded data to the client, retrying the same provider
-          // would duplicate content. But we CAN still failover to the next provider.
-          if (hasStreamedData) {
-            logger.error(`[router] ${providerId} failed mid-stream — cannot retry same provider, failing over: ${err.message}`);
-            fireFailoverWebhook(providerId, resolvedModel, err.message, 'failover');
-            yield { type: 'attempt', provider: providerId, resolvedModel, attempt: attempt + 1, status: 'failover' };
-            break; // Break out of retry loop for this provider, try next candidate
-          }
+            // Mid-stream failure prevents retrying the same model (would duplicate content)
+            if (hasStreamedData) {
+              logger.error(`[router] ${providerId} model ${resolvedModel} failed mid-stream — cannot retry, failing over: ${err.message}`);
+              fireFailoverWebhook(providerId, resolvedModel, err.message, 'failover');
+              yield { type: 'attempt', provider: providerId, resolvedModel, attempt: attempt + 1, status: 'failover', ...(isFallbackModel ? { modelFallback: true } : {}) };
+              break; // Break out of retry loop, try next fallback model or next provider
+            }
 
-          const isLastAttempt = attempt >= perProviderRetries;
-          const isLastProvider = candidates.indexOf(providerId) === candidates.length - 1;
+            const isLastAttempt = attempt >= perProviderRetries;
+            const isLastFallbackModel = modelIdx === fallbackModels.length - 1;
+            const isLastProvider = candidates.indexOf(providerId) === candidates.length - 1;
 
-          if (isLastAttempt && isLastProvider) {
-            // First pass fully exhausted — fall through to global fallback below
-            lastError = err.message;
-            break;
-          }
+            if (isLastAttempt && isLastFallbackModel && isLastProvider) {
+              lastError = err.message;
+              providerFullyFailed = true;
+              break;
+            }
 
-          if (!isLastAttempt) {
-            const isRateLimit = err.message.includes('429') || err.message.includes('rate_limit') || err.message.includes('413') || err.message.includes('Request too large');
-            const waitMs = isRateLimit
-              ? Math.min(10000 * Math.pow(2, attempt), 60000)
-              : this.options.backoffMs * Math.pow(2, attempt);
-            logger.warn(`[router] ${providerId} attempt ${attempt + 1}/${perProviderRetries + 1} failed, retry in ${waitMs}ms: ${err.message}`);
-            await new Promise(r => setTimeout(r, waitMs));
-          } else {
-            logger.warn(`[router] ${providerId} exhausted, failing over to next provider: ${err.message}`);
-            fireFailoverWebhook(providerId, resolvedModel, err.message, 'failover');
-            yield { type: 'attempt', provider: providerId, resolvedModel, attempt: attempt + 1, status: 'failover' };
+            if (!isLastAttempt) {
+              const isRateLimit = err.message.includes('429') || err.message.includes('rate_limit') || err.message.includes('413') || err.message.includes('Request too large');
+              const waitMs = isRateLimit
+                ? Math.min(10000 * Math.pow(2, attempt), 60000)
+                : this.options.backoffMs * Math.pow(2, attempt);
+              logger.warn(`[router] ${providerId} ${resolvedModel} attempt ${attempt + 1}/${perProviderRetries + 1} failed, retry in ${waitMs}ms: ${err.message}`);
+              await new Promise(r => setTimeout(r, waitMs));
+            } else {
+              logger.warn(`[router] ${providerId} model ${resolvedModel} exhausted: ${err.message}`);
+              fireFailoverWebhook(providerId, resolvedModel, err.message, 'failover');
+              yield { type: 'attempt', provider: providerId, resolvedModel, attempt: attempt + 1, status: 'failover', ...(isFallbackModel ? { modelFallback: true } : {}) };
+            }
           }
         }
+
+        if (providerFullyFailed) break;
       }
     }
 
@@ -213,90 +232,111 @@ export class Router {
         tried.add(providerId);
         const adapter = this.adapters.get(providerId);
         if (!adapter) continue;
-        let resolvedModel = this.modelResolver.resolve(model, providerId);
-        if (!resolvedModel || resolvedModel === model) {
-          const providerMap = this.modelResolver.getProviderMap();
-          const short = model.replace(/^models\//, '');
-          const explicitMapping = providerMap[model]?.[providerId]
-            || providerMap[short]?.[providerId];
-          if (explicitMapping) {
-            resolvedModel = Array.isArray(explicitMapping) ? explicitMapping[0] : explicitMapping;
-          } else {
-            // Reverse lookup: check if model starts with any config key
-            // OR if a config key starts with the model
-            let parentKey: string | null = null;
-            for (const key of Object.keys(providerMap)) {
-              if (key === 'default' || key === short) continue;
-              if (short.startsWith(key + '-') || short.startsWith(key)) {
-                parentKey = key;
-                break;
-              }
-            }
-            if (!parentKey) {
-              for (const key of Object.keys(providerMap)) {
-                if (key === 'default' || key === short) continue;
-                if (key.startsWith(short + '-') || key.startsWith(short)) {
-                  parentKey = key;
-                  break;
+
+        // Model fallback in the global fallback pass too
+        const fallbackModels = this.modelResolver.getFallbackModels(model, providerId);
+        let providerFullyFailed = false;
+
+        for (let modelIdx = 0; modelIdx < fallbackModels.length; modelIdx++) {
+          const candidateModel = fallbackModels[modelIdx];
+          let resolvedModel = candidateModel;
+
+          if (modelIdx === 0) {
+            const primaryResolved = this.modelResolver.resolve(model, providerId);
+            if (primaryResolved && primaryResolved !== model) {
+              resolvedModel = primaryResolved;
+            } else {
+              const providerMap = this.modelResolver.getProviderMap();
+              const short = model.replace(/^models\//, '');
+              const explicitMapping = providerMap[model]?.[providerId]
+                || providerMap[short]?.[providerId];
+              if (explicitMapping) {
+                resolvedModel = Array.isArray(explicitMapping) ? explicitMapping[0] : explicitMapping;
+              } else {
+                let parentKey: string | null = null;
+                for (const key of Object.keys(providerMap)) {
+                  if (key === 'default' || key === short) continue;
+                  if (short.startsWith(key + '-') || short.startsWith(key)) {
+                    parentKey = key;
+                    break;
+                  }
+                }
+                if (!parentKey) {
+                  for (const key of Object.keys(providerMap)) {
+                    if (key === 'default' || key === short) continue;
+                    if (key.startsWith(short + '-') || key.startsWith(short)) {
+                      parentKey = key;
+                      break;
+                    }
+                  }
+                }
+                const parentMapping = parentKey ? providerMap[parentKey]?.[providerId] : undefined;
+                if (parentMapping) {
+                  resolvedModel = Array.isArray(parentMapping) ? parentMapping[0] : parentMapping;
+                } else {
+                  const providerDefault = this.modelResolver.getDefaultModel(providerId);
+                  if (providerDefault) {
+                    resolvedModel = providerDefault;
+                  } else if (this.modelResolver.defaultModel) {
+                    resolvedModel = this.modelResolver.defaultModel;
+                  }
                 }
               }
             }
-            const parentMapping = parentKey ? providerMap[parentKey]?.[providerId] : undefined;
-            if (parentMapping) {
-              resolvedModel = Array.isArray(parentMapping) ? parentMapping[0] : parentMapping;
-            } else {
-              const providerDefault = this.modelResolver.getDefaultModel(providerId);
-              if (providerDefault) {
-                resolvedModel = providerDefault;
-              } else if (this.modelResolver.defaultModel) {
-                resolvedModel = this.modelResolver.defaultModel;
+          }
+
+          const isFallbackModel = modelIdx > 0;
+          if (isFallbackModel) {
+            logger.info(`[router] ${providerId} (fallback) trying model ${modelIdx + 1}/${fallbackModels.length}: ${resolvedModel}`);
+          } else {
+            logger.info(`[router] Fallback trying ${providerId} → ${resolvedModel} (from ${model})`);
+          }
+
+          for (let attempt = 0; attempt <= fallbackRetries; attempt++) {
+            yield { type: 'attempt', provider: providerId, resolvedModel, attempt: attempt + 1, status: attempt === 0 ? 'trying' : 'retrying', fallback: true, ...(isFallbackModel ? { modelFallback: true } : {}) };
+            let hasStreamedData = false;
+            try {
+              const gen = adapter.stream(resolvedModel, messages, tools, config, combinedSignal, system);
+              for await (const chunk of gen) {
+                if (chunk.type === 'error') throw new Error(chunk.content || 'provider error');
+                hasStreamedData = true;
+                yield { ...chunk, provider: providerId, resolvedModel };
+              }
+              logger.info(`[router] ${providerId} succeeded with ${resolvedModel} (fallback)`);
+              return;
+            } catch (err: any) {
+              if (combinedSignal.aborted) throw err;
+              if (hasStreamedData) {
+                logger.error(`[router] ${providerId} (fallback) model ${resolvedModel} failed mid-stream — failing over: ${err.message}`);
+                fireFailoverWebhook(providerId, resolvedModel, err.message, 'failover');
+                yield { type: 'attempt', provider: providerId, resolvedModel, attempt: attempt + 1, status: 'failover', fallback: true, ...(isFallbackModel ? { modelFallback: true } : {}) };
+                break;
+              }
+              const isLastAttempt = attempt >= fallbackRetries;
+              const isLastFallbackModel = modelIdx === fallbackModels.length - 1;
+              const isLastFallbackProvider = fallback.indexOf(providerId) === fallback.length - 1;
+
+              if (isLastAttempt && isLastFallbackModel && isLastFallbackProvider) {
+                logger.error(`[router] All providers (including fallback) exhausted for ${model}`);
+                fireFailoverWebhook(providerId, resolvedModel, err.message, 'failed');
+                yield { type: 'attempt', provider: providerId, resolvedModel, attempt: attempt + 1, status: 'failed', fallback: true };
+                yield { type: 'error', content: `All providers failed: ${err.message}`, provider: providerId, resolvedModel };
+                return;
+              }
+              if (!isLastAttempt) {
+                const isRateLimit = err.message.includes('429') || err.message.includes('rate_limit') || err.message.includes('413') || err.message.includes('Request too large');
+                const waitMs = isRateLimit ? Math.min(10000 * Math.pow(2, attempt), 60000) : this.options.backoffMs * Math.pow(2, attempt);
+                logger.warn(`[router] ${providerId} ${resolvedModel} (fallback) attempt ${attempt + 1}/${fallbackRetries + 1} failed, retry in ${waitMs}ms: ${err.message}`);
+                await new Promise(r => setTimeout(r, waitMs));
+              } else {
+                logger.warn(`[router] ${providerId} model ${resolvedModel} (fallback) exhausted: ${err.message}`);
+                fireFailoverWebhook(providerId, resolvedModel, err.message, 'failover');
+                yield { type: 'attempt', provider: providerId, resolvedModel, attempt: attempt + 1, status: 'failover', fallback: true };
               }
             }
           }
-        }
-        logger.info(`[router] Fallback trying ${providerId} → ${resolvedModel} (from ${model})`);
 
-        for (let attempt = 0; attempt <= fallbackRetries; attempt++) {
-          yield { type: 'attempt', provider: providerId, resolvedModel, attempt: attempt + 1, status: attempt === 0 ? 'trying' : 'retrying', fallback: true };
-          let hasStreamedData = false;
-          try {
-          const gen = adapter.stream(resolvedModel, messages, tools, config, combinedSignal, system);
-            for await (const chunk of gen) {
-              if (chunk.type === 'error') throw new Error(chunk.content || 'provider error');
-              hasStreamedData = true;
-              yield { ...chunk, provider: providerId, resolvedModel };
-            }
-            logger.info(`[router] ${providerId} succeeded (fallback)`);
-            return;
-          } catch (err: any) {
-          if (combinedSignal.aborted) throw err;
-            // Mid-stream failure in fallback — can't retry same provider, try next
-            if (hasStreamedData) {
-              logger.error(`[router] ${providerId} (fallback) failed mid-stream — failing over: ${err.message}`);
-              fireFailoverWebhook(providerId, resolvedModel, err.message, 'failover');
-              yield { type: 'attempt', provider: providerId, resolvedModel, attempt: attempt + 1, status: 'failover', fallback: true };
-              break;
-            }
-            const isLastAttempt = attempt >= fallbackRetries;
-            const isLastFallback = fallback.indexOf(providerId) === fallback.length - 1;
-            if (isLastAttempt && isLastFallback) {
-              logger.error(`[router] All providers (including fallback) exhausted for ${model}`);
-              fireFailoverWebhook(providerId, resolvedModel, err.message, 'failed');
-              yield { type: 'attempt', provider: providerId, resolvedModel, attempt: attempt + 1, status: 'failed', fallback: true };
-              yield { type: 'error', content: `All providers failed: ${err.message}`, provider: providerId, resolvedModel };
-              return;
-            }
-            if (!isLastAttempt) {
-              const isRateLimit = err.message.includes('429') || err.message.includes('rate_limit') || err.message.includes('413') || err.message.includes('Request too large');
-              const waitMs = isRateLimit ? Math.min(10000 * Math.pow(2, attempt), 60000) : this.options.backoffMs * Math.pow(2, attempt);
-              logger.warn(`[router] ${providerId} (fallback) attempt ${attempt + 1}/${fallbackRetries + 1} failed, retry in ${waitMs}ms: ${err.message}`);
-              await new Promise(r => setTimeout(r, waitMs));
-            } else {
-              logger.warn(`[router] ${providerId} (fallback) exhausted, trying next: ${err.message}`);
-              fireFailoverWebhook(providerId, resolvedModel, err.message, 'failover');
-              yield { type: 'attempt', provider: providerId, resolvedModel, attempt: attempt + 1, status: 'failover', fallback: true };
-            }
-          }
+          if (providerFullyFailed) break;
         }
       }
     }
