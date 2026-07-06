@@ -214,6 +214,34 @@ describe('Compaction', () => {
       const result = await compactIfNeeded(mapped, 'claude-sonnet-4', router);
       assert.equal(requestedModel, 'claude-sonnet-4');
     });
+
+    it('falls back to truncation on empty LLM summary', async () => {
+      process.env.COMPACTION_THRESHOLD = '0.1';
+      process.env.COMPACTION_TAIL_TURNS = '1';
+      loadContextWindowsFromModels({ 'test-model': 100 });
+
+      const messages = makeMessages(5);
+      const mapped = makeMappedRequest(messages);
+      const router = createMockRouter('  '); // whitespace-only summary
+
+      const result = await compactIfNeeded(mapped, 'test-model', router);
+      assert.ok(result.messages[0].content?.toString().includes('truncated'));
+    });
+
+    it('preserves system and tools in output', async () => {
+      process.env.COMPACTION_THRESHOLD = '0.1';
+      process.env.COMPACTION_TAIL_TURNS = '1';
+      loadContextWindowsFromModels({ 'test-model': 100 });
+
+      const messages = makeMessages(5);
+      const tools = { view_file: { description: 'View file' } };
+      const mapped: MappedRequest = { messages, system: 'system prompt', tools };
+      const router = createMockRouter('summary');
+
+      const result = await compactIfNeeded(mapped, 'test-model', router);
+      assert.equal(result.system, 'system prompt');
+      assert.deepEqual(result.tools, tools);
+    });
   });
 
   describe('getCompactionConfig', () => {

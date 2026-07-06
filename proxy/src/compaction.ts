@@ -69,20 +69,6 @@ export function buildSummarizationPrompt(messages: OpenAIMessage[]): string {
   return SUMMARIZATION_TEMPLATE + serialized;
 }
 
-export async function compactMessages(
-  messages: OpenAIMessage[],
-  tailTurns: number = DEFAULT_TAIL_TURNS,
-): Promise<OpenAIMessage[]> {
-  const { toCompact, toPreserve } = selectMessagesToCompact(messages, tailTurns);
-  if (toCompact.length === 0) return messages;
-
-  logger.info(`[compaction] Compacting ${toCompact.length} messages, preserving ${toPreserve.length}`);
-  return [
-    { role: 'user', content: '[Context compacted - summary placeholder]' },
-    ...toPreserve,
-  ];
-}
-
 /**
  * Attempt LLM-powered compaction. Falls back to truncation on failure.
  * Returns the mapped request with messages compacted if needed.
@@ -116,7 +102,7 @@ export async function compactIfNeeded(
     // Use router's execute to get a non-streaming summary
     let summary = '';
     const gen = router.execute(
-      providerIds as any,
+      providerIds,
       compactionModel,
       [{ role: 'user', content: prompt }],
       undefined,
