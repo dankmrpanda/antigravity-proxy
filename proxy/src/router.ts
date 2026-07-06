@@ -122,7 +122,7 @@ export class Router {
         const explicitMapping = providerMap[model]?.[providerId]
           || providerMap[short]?.[providerId];
         if (explicitMapping) {
-          resolvedModel = explicitMapping;
+          resolvedModel = Array.isArray(explicitMapping) ? explicitMapping[0] : explicitMapping;
         } else {
           // Reverse lookup: model starts with config key OR config key starts with model
           let parentKey: string | null = null;
@@ -135,7 +135,7 @@ export class Router {
           }
           const parentMapping = parentKey ? providerMap[parentKey]?.[providerId] : undefined;
           if (parentMapping) {
-            resolvedModel = parentMapping;
+            resolvedModel = Array.isArray(parentMapping) ? parentMapping[0] : parentMapping;
           } else {
             const providerDefault = this.modelResolver.getDefaultModel(providerId);
             if (providerDefault) {
@@ -220,7 +220,7 @@ export class Router {
           const explicitMapping = providerMap[model]?.[providerId]
             || providerMap[short]?.[providerId];
           if (explicitMapping) {
-            resolvedModel = explicitMapping;
+            resolvedModel = Array.isArray(explicitMapping) ? explicitMapping[0] : explicitMapping;
           } else {
             // Reverse lookup: check if model starts with any config key
             // OR if a config key starts with the model
@@ -243,7 +243,7 @@ export class Router {
             }
             const parentMapping = parentKey ? providerMap[parentKey]?.[providerId] : undefined;
             if (parentMapping) {
-              resolvedModel = parentMapping;
+              resolvedModel = Array.isArray(parentMapping) ? parentMapping[0] : parentMapping;
             } else {
               const providerDefault = this.modelResolver.getDefaultModel(providerId);
               if (providerDefault) {

@@ -10,9 +10,11 @@ export type RoutingMode = 'priority-chain' | 'per-model-per-provider';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MODELS_PATH = path.resolve(__dirname, '..', 'models.json');
 
+export type ProviderModelValue = string | string[];
+
 export interface ProviderModelMap {
   [antigravityModel: string]: {
-    [providerId: string]: string;
+    [providerId: string]: ProviderModelValue;
   };
 }
 
@@ -70,21 +72,51 @@ export class ModelResolver {
     this.load();
   }
 
+  private extractPrimary(value: ProviderModelValue): string {
+    return Array.isArray(value) ? value[0] : value;
+  }
+
   getDefaultModel(providerId?: string): string {
     if (providerId) {
       const fromProviderMap = this.providerMap['default']?.[providerId];
-      if (fromProviderMap) return fromProviderMap;
+      if (fromProviderMap != null) return this.extractPrimary(fromProviderMap);
     }
     return this.flatMap['default'] || '';
   }
 
-  resolve(model: string, providerId?: string): string {
-    if (providerId && this.providerMap[model]?.[providerId]) {
-      return this.providerMap[model][providerId];
+  /**
+   * Returns the full list of fallback models for a given antigravity model + provider.
+   * Falls back to the resolved primary model as a single-element array if no mapping exists.
+   */
+  getFallbackModels(model: string, providerId: string): string[] {
+    const value = this.providerMap[model]?.[providerId];
+    if (value != null) {
+      return Array.isArray(value) ? [...value] : [value];
     }
     const short = model.replace(/^models\//, '');
-    if (short !== model && providerId && this.providerMap[short]?.[providerId]) {
-      return this.providerMap[short][providerId];
+    if (short !== model) {
+      const shortValue = this.providerMap[short]?.[providerId];
+      if (shortValue != null) {
+        return Array.isArray(shortValue) ? [...shortValue] : [shortValue];
+      }
+    }
+    const primary = this.findPrimaryModel(short);
+    if (primary) {
+      const primaryValue = this.providerMap[primary]?.[providerId];
+      if (primaryValue != null) {
+        return Array.isArray(primaryValue) ? [...primaryValue] : [primaryValue];
+      }
+    }
+    return [short || model];
+  }
+
+  resolve(model: string, providerId?: string): string {
+    if (providerId && this.providerMap[model]?.[providerId] != null) {
+      return this.extractPrimary(this.providerMap[model][providerId]);
+    }
+    const short = model.replace(/^models\//, '');
+    if (short !== model && providerId && this.providerMap[short]?.[providerId] != null) {
+      return this.extractPrimary(this.providerMap[short][providerId]);
     }
     if (this.flatMap[model]) return this.flatMap[model];
     if (this.flatMap[short]) return this.flatMap[short];
@@ -93,8 +125,8 @@ export class ModelResolver {
       if (short.startsWith(key) || key.startsWith(short)) return this.flatMap[key];
     }
     const primary = this.findPrimaryModel(short);
-    if (primary && providerId && this.providerMap[primary]?.[providerId]) {
-      return this.providerMap[primary][providerId];
+    if (primary && providerId && this.providerMap[primary]?.[providerId] != null) {
+      return this.extractPrimary(this.providerMap[primary][providerId]);
     }
     return short || model;
   }
