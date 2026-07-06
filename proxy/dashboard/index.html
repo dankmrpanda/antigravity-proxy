@@ -360,6 +360,38 @@
 
       <div class="form-section">
         <h3>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+          Auto Context Compaction
+        </h3>
+        <div class="form-row" style="grid-template-columns:1fr 1fr 1fr 1fr">
+          <div class="form-group">
+            <label>Enabled</label>
+            <select id="cfgCompactionEnabled">
+              <option value="true">Enabled</option>
+              <option value="false">Disabled</option>
+            </select>
+            <div class="hint">Automatically compact context when approaching model limits</div>
+          </div>
+          <div class="form-group">
+            <label>Threshold</label>
+            <input type="number" id="cfgCompactionThreshold" placeholder="0.8" min="0.1" max="1.0" step="0.05">
+            <div class="hint">Trigger compaction at this % of context window (0.8 = 80%)</div>
+          </div>
+          <div class="form-group">
+            <label>Compaction Model</label>
+            <input type="text" id="cfgCompactionModel" placeholder="Same as request">
+            <div class="hint">Model for summarization (leave empty to use request model)</div>
+          </div>
+          <div class="form-group">
+            <label>Tail Turns</label>
+            <input type="number" id="cfgCompactionTailTurns" placeholder="2" min="1" max="10">
+            <div class="hint">Recent turns to preserve verbatim during compaction</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h3>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
           Blocklist
         </h3>
@@ -513,6 +545,16 @@
       <div style="margin-top:16px;padding:14px 16px;background:var(--surface);border:1px dashed var(--border2);border-radius:10px;overflow:visible">
         <p style="font-size:13px;color:var(--text);margin-bottom:4px;font-weight:600">Add Custom Model Mapping</p>
         <p style="font-size:11px;color:var(--text3);margin-bottom:12px">Map any model name Antigravity sends to a specific provider + model. Overrides the default model for that specific name.</p>
+
+        <!-- Model Fallback Info -->
+        <div style="padding:10px 12px;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;margin-bottom:12px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;color:var(--accent2)"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            <span style="font-size:12px;font-weight:600;color:var(--text)">Model Fallback</span>
+          </div>
+          <p style="font-size:11px;color:var(--text3);margin:0 0 6px 0">Each provider can have multiple fallback models. If the primary model fails, the proxy tries fallback models in order before moving to the next provider.</p>
+          <p style="font-size:11px;color:var(--text3);margin:0">To configure: edit <code style="background:var(--surface);padding:1px 4px;border-radius:3px;font-size:10px">models.json</code> and use array syntax: <code style="background:var(--surface);padding:1px 4px;border-radius:3px;font-size:10px">"zen": ["primary-model", "fallback-model"]</code></p>
+        </div>
         <div style="display:grid;grid-template-columns:1fr 140px 1fr auto;gap:8px;align-items:end">
           <div class="model-card-field" style="margin-bottom:0">
             <label>Model Name (sent by Antigravity)</label>
@@ -529,6 +571,14 @@
           <button class="btn btn-sm btn-primary" onclick="addCustomModelMapping()" style="margin-bottom:0;height:36px">+ Add</button>
         </div>
         <div id="customModelMappingsList" style="margin-top:12px"></div>
+      </div>
+
+      <!-- Current Model Fallback Configuration -->
+      <div style="margin-top:16px;padding:14px 16px;background:var(--surface);border:1px solid var(--border2);border-radius:10px">
+        <p style="font-size:13px;color:var(--text);margin-bottom:8px;font-weight:600">Current Model Fallback Configuration</p>
+        <div id="modelFallbackList" style="font-size:12px;color:var(--text2)">
+          <p style="color:var(--text3);margin:0">Loading...</p>
+        </div>
       </div>
     </section>
 
@@ -910,6 +960,15 @@ async function reloadAll() {
     // Context strip mode
     const csmEl = document.getElementById('cfgContextStripMode');
     if (csmEl) csmEl.value = s.contextStripMode || 'strip';
+    // Compaction settings
+    const ceEl = document.getElementById('cfgCompactionEnabled');
+    if (ceEl) ceEl.value = s.env.COMPACTION_ENABLED !== 'false' ? 'true' : 'false';
+    const ctEl = document.getElementById('cfgCompactionThreshold');
+    if (ctEl) ctEl.value = s.env.COMPACTION_THRESHOLD || '0.8';
+    const cmEl = document.getElementById('cfgCompactionModel');
+    if (cmEl) cmEl.value = s.env.COMPACTION_MODEL || '';
+    const cttEl = document.getElementById('cfgCompactionTailTurns');
+    if (cttEl) cttEl.value = s.env.COMPACTION_TAIL_TURNS || '2';
     // Auth status
     updateAuthStatus(s);
     document.getElementById('nvKeyStatus').textContent = s.env.NVIDIA_API_KEY ? '✓ configured' : '○ not set';
@@ -1328,6 +1387,10 @@ async function saveConfig() {
     RATE_LIMIT_PROVIDER: document.getElementById('cfgRateProvider').value,
     RATE_LIMIT_WINDOW_MS: document.getElementById('cfgRateWindow').value,
     CONTEXT_STRIP_MODE: document.getElementById('cfgContextStripMode').value,
+    COMPACTION_ENABLED: document.getElementById('cfgCompactionEnabled').value,
+    COMPACTION_THRESHOLD: document.getElementById('cfgCompactionThreshold').value,
+    COMPACTION_MODEL: document.getElementById('cfgCompactionModel').value,
+    COMPACTION_TAIL_TURNS: document.getElementById('cfgCompactionTailTurns').value,
   };
   deleteEmpty(u);
   try { const r = await api('POST','/api/config',u); if (r.ok) { toast('Config saved and loaded'); reloadAll(); } else toast('Save failed: '+r.error, true); }
@@ -2034,6 +2097,44 @@ function renderUtilityModels() {
     });
     attachModelField('defaultModelSelect', 'default', currentDefault, _modelConfig._default_model || '');
   }
+  renderModelFallbackList();
+}
+
+function renderModelFallbackList() {
+  const container = document.getElementById('modelFallbackList');
+  if (!container || !_modelConfig) return;
+
+  const pm = _modelConfig._provider_models || {};
+  const fallbackModels = [];
+
+  for (const [alias, providers] of Object.entries(pm)) {
+    if (alias === 'default') continue;
+    for (const [provider, model] of Object.entries(providers)) {
+      if (Array.isArray(model) && model.length > 1) {
+        fallbackModels.push({ alias, provider, models: model });
+      }
+    }
+  }
+
+  if (fallbackModels.length === 0) {
+    container.innerHTML = '<p style="color:var(--text3);margin:0">No model fallbacks configured. All models use single provider mappings.</p>';
+    return;
+  }
+
+  container.innerHTML = fallbackModels.map(({ alias, provider, models }) => {
+    const modelList = models.map((m, i) => {
+      const isPrimary = i === 0;
+      return `<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-family:var(--mono);font-size:11px;${isPrimary ? 'background:var(--accentDim);color:var(--accent2)' : 'background:var(--surface2);color:var(--text3)'}">${isPrimary ? 'Primary: ' : 'Fallback ' + i + ': '}${esc(m)}</span>`;
+    }).join(' → ');
+    return `<div style="padding:8px 12px;background:var(--surface2);border-radius:6px;margin-bottom:6px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <span style="font-weight:600;color:var(--text)">${esc(alias)}</span>
+        <span style="color:var(--text3)">→</span>
+        <span style="color:var(--accent2)">${esc(provider)}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">${modelList}</div>
+    </div>`;
+  }).join('');
 }
 
 
