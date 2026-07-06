@@ -573,11 +573,77 @@
         <div id="customModelMappingsList" style="margin-top:12px"></div>
       </div>
 
-      <!-- Current Model Fallback Configuration -->
+      <!-- Model Fallback Configuration -->
       <div style="margin-top:16px;padding:14px 16px;background:var(--surface);border:1px solid var(--border2);border-radius:10px">
-        <p style="font-size:13px;color:var(--text);margin-bottom:8px;font-weight:600">Current Model Fallback Configuration</p>
-        <div id="modelFallbackList" style="font-size:12px;color:var(--text2)">
-          <p style="color:var(--text3);margin:0">Loading...</p>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div>
+            <p style="font-size:13px;color:var(--text);margin:0;font-weight:600">Model Fallback Configuration</p>
+            <p style="font-size:11px;color:var(--text3);margin:4px 0 0 0">Configure multiple fallback models per provider. If primary model fails, proxy tries fallbacks in order.</p>
+          </div>
+          <button class="btn btn-sm btn-primary" onclick="saveModelConfig()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Save
+          </button>
+        </div>
+
+        <!-- Add Fallback Model Form -->
+        <div style="padding:10px 12px;background:var(--surface2);border:1px dashed var(--border2);border-radius:8px;margin-bottom:12px">
+          <p style="font-size:11px;color:var(--text3);margin:0 0 8px 0">Add fallback model to existing provider mapping:</p>
+          <div style="display:grid;grid-template-columns:1fr 140px 1fr auto;gap:8px;align-items:end">
+            <div class="model-card-field" style="margin-bottom:0">
+              <label>Model Alias (Antigravity name)</label>
+              <input id="fallbackModelAlias" type="text" placeholder="e.g. gemini-3.5-flash" style="width:100%;padding:7px 10px;border-radius:6px;border:1px solid var(--border2);background:#1a1a20;color:var(--text);font-size:12px;font-family:var(--mono);outline:none">
+            </div>
+            <div class="model-card-field" style="margin-bottom:0">
+              <label>Provider</label>
+              <div id="fallbackProviderSelect" style="position:relative"></div>
+            </div>
+            <div class="model-card-field" style="margin-bottom:0">
+              <label>Fallback Model Name</label>
+              <input id="fallbackModelName" type="text" placeholder="e.g. deepseek-v4-flash-free" style="width:100%;padding:7px 10px;border-radius:6px;border:1px solid var(--border2);background:#1a1a20;color:var(--text);font-size:12px;font-family:var(--mono);outline:none">
+            </div>
+            <button class="btn btn-sm btn-primary" onclick="addFallbackModel()" style="margin-bottom:0;height:34px">+ Add</button>
+          </div>
+        </div>
+
+        <!-- Current Fallback Configurations -->
+        <div id="fallbackConfigList" style="max-height:300px;overflow-y:auto">
+          <p style="color:var(--text3);font-size:12px;margin:0">Loading...</p>
+        </div>
+      </div>
+
+      <!-- Context Window Configuration -->
+      <div style="margin-top:16px;padding:14px 16px;background:var(--surface);border:1px solid var(--border2);border-radius:10px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div>
+            <p style="font-size:13px;color:var(--text);margin:0;font-weight:600">Context Window Configuration</p>
+            <p style="font-size:11px;color:var(--text3);margin:4px 0 0 0">Set context window sizes for models. Used by auto-compaction to know when to trigger.</p>
+          </div>
+          <button class="btn btn-sm btn-primary" onclick="saveContextWindows()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Save
+          </button>
+        </div>
+
+        <!-- Add Context Window Form -->
+        <div style="padding:10px 12px;background:var(--surface2);border:1px dashed var(--border2);border-radius:8px;margin-bottom:12px">
+          <p style="font-size:11px;color:var(--text3);margin:0 0 8px 0">Add or update context window for a model:</p>
+          <div style="display:grid;grid-template-columns:1fr 140px auto;gap:8px;align-items:end">
+            <div class="model-card-field" style="margin-bottom:0">
+              <label>Model Name</label>
+              <input id="cwModelInput" type="text" placeholder="e.g. mimo-v2.5-free" style="width:100%;padding:7px 10px;border-radius:6px;border:1px solid var(--border2);background:#1a1a20;color:var(--text);font-size:12px;font-family:var(--mono);outline:none">
+            </div>
+            <div class="model-card-field" style="margin-bottom:0">
+              <label>Context Window (tokens)</label>
+              <input id="cwTokensInput" type="number" placeholder="128000" min="1000" style="width:100%;padding:7px 10px;border-radius:6px;border:1px solid var(--border2);background:#1a1a20;color:var(--text);font-size:12px;font-family:var(--mono);outline:none">
+            </div>
+            <button class="btn btn-sm btn-primary" onclick="addContextWindow()" style="margin-bottom:0;height:34px">+ Add</button>
+          </div>
+        </div>
+
+        <!-- Current Context Windows -->
+        <div id="contextWindowList" style="max-height:300px;overflow-y:auto">
+          <p style="color:var(--text3);font-size:12px;margin:0">Loading...</p>
         </div>
       </div>
     </section>
@@ -2097,7 +2163,15 @@ function renderUtilityModels() {
     });
     attachModelField('defaultModelSelect', 'default', currentDefault, _modelConfig._default_model || '');
   }
-  renderModelFallbackList();
+  renderFallbackConfigList();
+  renderContextWindowList();
+
+  // Initialize fallback provider selector
+  const fpContainer = document.getElementById('fallbackProviderSelect');
+  if (fpContainer && !fpContainer.querySelector('.rsel-trigger')) {
+    const firstProv = _modelConfig?._global_provider_priority?.[0] || 'zen';
+    attachProviderField('fallbackProviderSelect', 'fallback', firstProv, () => {});
+  }
 }
 
 function renderModelFallbackList() {
@@ -2117,24 +2191,194 @@ function renderModelFallbackList() {
   }
 
   if (fallbackModels.length === 0) {
-    container.innerHTML = '<p style="color:var(--text3);margin:0">No model fallbacks configured. All models use single provider mappings.</p>';
+    container.innerHTML = '<p style="color:var(--text3);margin:0;font-size:12px">No model fallbacks configured. All models use single provider mappings.</p>';
     return;
   }
 
   container.innerHTML = fallbackModels.map(({ alias, provider, models }) => {
     const modelList = models.map((m, i) => {
       const isPrimary = i === 0;
-      return `<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-family:var(--mono);font-size:11px;${isPrimary ? 'background:var(--accentDim);color:var(--accent2)' : 'background:var(--surface2);color:var(--text3)'}">${isPrimary ? 'Primary: ' : 'Fallback ' + i + ': '}${esc(m)}</span>`;
-    }).join(' → ');
+      return `<div style="display:flex;align-items:center;gap:4px">
+        <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-family:var(--mono);font-size:11px;${isPrimary ? 'background:var(--accentDim);color:var(--accent2)' : 'background:var(--surface2);color:var(--text3)'}">${isPrimary ? 'Primary' : 'Fallback ' + i}: ${esc(m)}</span>
+        ${!isPrimary ? `<button class="btn btn-sm btn-ghost" onclick="removeFallbackModel('${esc(alias)}','${esc(provider)}',${i})" style="font-size:10px;padding:2px 4px;color:var(--text3)">✕</button>` : ''}
+      </div>`;
+    }).join('');
     return `<div style="padding:8px 12px;background:var(--surface2);border-radius:6px;margin-bottom:6px">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-        <span style="font-weight:600;color:var(--text)">${esc(alias)}</span>
-        <span style="color:var(--text3)">→</span>
-        <span style="color:var(--accent2)">${esc(provider)}</span>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-weight:600;color:var(--text)">${esc(alias)}</span>
+          <span style="color:var(--text3)">→</span>
+          <span style="color:var(--accent2)">${esc(provider)}</span>
+        </div>
+        <button class="btn btn-sm btn-ghost" onclick="removeFallbackConfig('${esc(alias)}','${esc(provider)}')" style="font-size:10px;padding:2px 6px;color:var(--text3)">Remove All</button>
       </div>
-      <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">${modelList}</div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">${modelList}</div>
     </div>`;
   }).join('');
+}
+
+function renderFallbackConfigList() {
+  const container = document.getElementById('fallbackConfigList');
+  if (!container || !_modelConfig) return;
+
+  const pm = _modelConfig._provider_models || {};
+  const fallbackModels = [];
+
+  for (const [alias, providers] of Object.entries(pm)) {
+    if (alias === 'default') continue;
+    for (const [provider, model] of Object.entries(providers)) {
+      if (Array.isArray(model) && model.length > 1) {
+        fallbackModels.push({ alias, provider, models: model });
+      }
+    }
+  }
+
+  if (fallbackModels.length === 0) {
+    container.innerHTML = '<p style="color:var(--text3);margin:0;font-size:12px">No model fallbacks configured. All models use single provider mappings.</p>';
+    return;
+  }
+
+  container.innerHTML = fallbackModels.map(({ alias, provider, models }) => {
+    const modelList = models.map((m, i) => {
+      const isPrimary = i === 0;
+      return `<div style="display:flex;align-items:center;gap:4px">
+        <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-family:var(--mono);font-size:11px;${isPrimary ? 'background:var(--accentDim);color:var(--accent2)' : 'background:var(--surface2);color:var(--text3)'}">${isPrimary ? 'Primary' : 'Fallback ' + i}: ${esc(m)}</span>
+        ${!isPrimary ? `<button class="btn btn-sm btn-ghost" onclick="removeFallbackModel('${esc(alias)}','${esc(provider)}',${i})" style="font-size:10px;padding:2px 4px;color:var(--text3)">✕</button>` : ''}
+      </div>`;
+    }).join('');
+    return `<div style="padding:8px 12px;background:var(--surface2);border-radius:6px;margin-bottom:6px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-weight:600;color:var(--text)">${esc(alias)}</span>
+          <span style="color:var(--text3)">→</span>
+          <span style="color:var(--accent2)">${esc(provider)}</span>
+        </div>
+        <button class="btn btn-sm btn-ghost" onclick="removeFallbackConfig('${esc(alias)}','${esc(provider)}')" style="font-size:10px;padding:2px 6px;color:var(--text3)">Remove All</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">${modelList}</div>
+    </div>`;
+  }).join('');
+}
+
+function addFallbackModel() {
+  const alias = document.getElementById('fallbackModelAlias').value.trim();
+  const provider = document.getElementById('fallbackProviderSelect')?.querySelector('.rsel-value')?.value || '';
+  const model = document.getElementById('fallbackModelName').value.trim();
+
+  if (!alias || !provider || !model) {
+    toast('Fill in all fields', true);
+    return;
+  }
+
+  const pm = _modelConfig._provider_models || {};
+  if (!pm[alias]) pm[alias] = {};
+
+  const existing = pm[alias][provider];
+  if (Array.isArray(existing)) {
+    if (existing.includes(model)) {
+      toast('Model already in fallback list', true);
+      return;
+    }
+    pm[alias][provider] = [...existing, model];
+  } else if (existing) {
+    pm[alias][provider] = [existing, model];
+  } else {
+    pm[alias][provider] = model;
+  }
+
+  _modelConfig._provider_models = pm;
+  document.getElementById('fallbackModelAlias').value = '';
+  document.getElementById('fallbackModelName').value = '';
+  renderFallbackConfigList();
+  toast('Fallback model added');
+}
+
+function removeFallbackModel(alias, provider, index) {
+  const pm = _modelConfig._provider_models || {};
+  const existing = pm[alias]?.[provider];
+  if (!Array.isArray(existing)) return;
+
+  const newArr = existing.filter((_, i) => i !== index);
+  if (newArr.length === 1) {
+    pm[alias][provider] = newArr[0];
+  } else if (newArr.length === 0) {
+    delete pm[alias][provider];
+    if (Object.keys(pm[alias]).length === 0) delete pm[alias];
+  } else {
+    pm[alias][provider] = newArr;
+  }
+
+  _modelConfig._provider_models = pm;
+  renderFallbackConfigList();
+}
+
+function removeFallbackConfig(alias, provider) {
+  const pm = _modelConfig._provider_models || {};
+  if (pm[alias]) {
+    delete pm[alias][provider];
+    if (Object.keys(pm[alias]).length === 0) delete pm[alias];
+  }
+  _modelConfig._provider_models = pm;
+  renderFallbackConfigList();
+}
+
+// Context Window functions
+function renderContextWindowList() {
+  const container = document.getElementById('contextWindowList');
+  if (!container || !_modelConfig) return;
+
+  const cw = _modelConfig._context_windows || {};
+  const entries = Object.entries(cw);
+
+  if (entries.length === 0) {
+    container.innerHTML = '<p style="color:var(--text3);margin:0;font-size:12px">No context windows configured. Default: 128,000 tokens for all models.</p>';
+    return;
+  }
+
+  container.innerHTML = entries.sort((a, b) => b[1] - a[1]).map(([model, tokens]) => {
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--surface2);border-radius:6px;margin-bottom:4px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-family:var(--mono);font-size:12px;color:var(--text)">${esc(model)}</span>
+        <span style="color:var(--text3)">→</span>
+        <span style="font-family:var(--mono);font-size:12px;color:var(--accent2)">${tokens.toLocaleString()} tokens</span>
+      </div>
+      <button class="btn btn-sm btn-ghost" onclick="removeContextWindow('${esc(model)}')" style="font-size:10px;padding:2px 6px;color:var(--text3)">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function addContextWindow() {
+  const model = document.getElementById('cwModelInput').value.trim();
+  const tokens = parseInt(document.getElementById('cwTokensInput').value);
+
+  if (!model || !tokens || tokens < 1000) {
+    toast('Enter valid model name and token count (min 1000)', true);
+    return;
+  }
+
+  if (!_modelConfig._context_windows) _modelConfig._context_windows = {};
+  _modelConfig._context_windows[model] = tokens;
+
+  document.getElementById('cwModelInput').value = '';
+  document.getElementById('cwTokensInput').value = '';
+  renderContextWindowList();
+  toast('Context window added');
+}
+
+function removeContextWindow(model) {
+  if (_modelConfig._context_windows) {
+    delete _modelConfig._context_windows[model];
+    renderContextWindowList();
+  }
+}
+
+async function saveContextWindows() {
+  if (!_modelConfig) { toast('No config loaded', true); return; }
+  try {
+    var r = await api('POST', '/api/models', _modelConfig);
+    if (r.ok) { toast('Context windows saved'); }
+    else toast('Save failed: ' + (r.error || 'unknown'), true);
+  } catch (e) { toast('Save failed: ' + e.message, true); }
 }
 
 
