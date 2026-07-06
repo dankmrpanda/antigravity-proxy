@@ -768,10 +768,17 @@ async function main(): Promise<void> {
     if (fs.existsSync(cwPath)) {
       const cwData = JSON.parse(fs.readFileSync(cwPath, 'utf-8'));
       loadContextWindowsFromModels(cwData);
-    } else {
-      logger.debug('[compaction] No context-windows.json found, using defaults');
     }
   } catch { /* no context-windows.json is fine — defaults apply */ }
+  try {
+    const modelsPath = path.resolve(__dirname, '..', 'models.json');
+    if (fs.existsSync(modelsPath)) {
+      const modelsData = JSON.parse(fs.readFileSync(modelsPath, 'utf-8'));
+      if (modelsData._context_windows) {
+        loadContextWindowsFromModels(modelsData._context_windows);
+      }
+    }
+  } catch { /* models.json context windows are optional — defaults apply */ }
   logger.info(`=== Antigravity Proxy (${config.provider}) ===`);
 
   if (!validateApiKey()) process.exit(1);

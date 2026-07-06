@@ -27,6 +27,10 @@ export class ModelResolver {
   fallbackModel: string = '';
   defaultProvider: ProviderId | '' = '';
   defaultModel: string = '';
+  compactionEnabled: boolean = true;
+  compactionThreshold: number = 0.8;
+  compactionModel: string = '';
+  compactionTailTurns: number = 2;
 
   constructor() {
     this.load();
@@ -60,6 +64,18 @@ export class ModelResolver {
         }
         if (typeof file._default_model === 'string') {
           this.defaultModel = file._default_model;
+        }
+        if (typeof file._compaction_enabled === 'boolean') {
+          this.compactionEnabled = file._compaction_enabled;
+        }
+        if (typeof file._compaction_threshold === 'number') {
+          this.compactionThreshold = file._compaction_threshold;
+        }
+        if (typeof file._compaction_model === 'string') {
+          this.compactionModel = file._compaction_model;
+        }
+        if (typeof file._compaction_tail_turns === 'number') {
+          this.compactionTailTurns = file._compaction_tail_turns;
         }
         for (const [k, v] of Object.entries(file)) {
           if (!k.startsWith('_')) this.flatMap[k] = String(v);

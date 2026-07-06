@@ -10,13 +10,29 @@
   "_fallback_model": "",
   "_default_provider": "nvidia",
   "_default_model": "stepfun-ai/step-3.7-flash",
+  "_compaction_enabled": true,
+  "_compaction_threshold": 0.8,
+  "_compaction_model": "",
+  "_compaction_tail_turns": 2,
+  "_context_windows": {
+    "gemini-3.5-flash": 1048576,
+    "gemini-3.1-pro": 2097152,
+    "claude-sonnet-4-6-thinking": 200000,
+    "claude-opus-4-6-thinking": 200000,
+    "gpt-oss-120b-medium": 128000,
+    "deepseek-v4-pro": 128000,
+    "deepseek-v4-flash-free": 128000,
+    "mimo-v2.5-free": 128000,
+    "north-mini-code-free": 64000,
+    "stepfun-ai/step-3.7-flash": 128000
+  },
   "_provider_models": {
     "gemini-3.5-flash": {
       "zen": "mimo-v2.5-free"
     },
     "gemini-3.1-pro": {
       "opencode-go": "deepseek-v4-pro",
-      "zen": "deepseek-v4-flash-free"
+      "zen": ["deepseek-v4-flash-free", "mimo-v2.5-free"]
     },
     "claude-sonnet-4-6-thinking": {
       "zen": "mimo-v2.5-free"
@@ -25,7 +41,7 @@
       "zen": "mimo-v2.5-free"
     },
     "gpt-oss-120b-medium": {
-      "nvidia": "stepfun-ai/step-3.7-flash"
+      "nvidia": ["stepfun-ai/step-3.7-flash", "deepseek-v4-pro"]
     },
     "gemini-3.5-flash-low": {
       "zen": "deepseek-v4-flash-free"

@@ -4,6 +4,7 @@ import type { OpenAIMessage, MappedRequest } from './mapper.js';
 import type { Router } from './router.js';
 import { config } from './config.js';
 import { getContextWindow } from './context-windows.js';
+import { modelResolver } from './models.js';
 
 const DEFAULT_THRESHOLD = 0.8;
 const DEFAULT_TAIL_TURNS = 2;
@@ -138,9 +139,9 @@ export async function compactIfNeeded(
 
 export function getCompactionConfig() {
   return {
-    enabled: process.env.COMPACTION_ENABLED !== 'false',
-    threshold: parseFloat(process.env.COMPACTION_THRESHOLD || '0.8'),
-    tailTurns: parseInt(process.env.COMPACTION_TAIL_TURNS || '2', 10),
-    model: process.env.COMPACTION_MODEL || '',
+    enabled: process.env.COMPACTION_ENABLED !== 'false' && modelResolver.compactionEnabled,
+    threshold: parseFloat(process.env.COMPACTION_THRESHOLD || String(modelResolver.compactionThreshold)),
+    tailTurns: parseInt(process.env.COMPACTION_TAIL_TURNS || String(modelResolver.compactionTailTurns), 10),
+    model: process.env.COMPACTION_MODEL || modelResolver.compactionModel,
   };
 }
