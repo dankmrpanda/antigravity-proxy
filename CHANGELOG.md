@@ -6,6 +6,34 @@ Dates are UTC. Commit hashes are the actual merge commits on `main`.
 
 ---
 
+## [1.0.11] — 2026-07-06
+
+### Added
+
+- **Auto Context Compaction** — automatically compacts context when approaching model limits:
+  - Pre-send token estimation using chars/4 heuristic
+  - LLM-based summarization following OpenCode's structured format (Objective/Work State/Next Move)
+  - Preserves last N turns verbatim (configurable, default 2)
+  - Falls back to truncation if LLM summarization fails
+  - Configurable via env vars: `COMPACTION_ENABLED`, `COMPACTION_THRESHOLD`, `COMPACTION_MODEL`, `COMPACTION_TAIL_TURNS`
+  - Context window auto-detection from provider APIs + manual override in `models.json`
+  - Dashboard UI for all compaction settings in Config tab
+
+- **Model Fallback Per Provider** — try multiple models within same provider before failing over:
+  - `models.json` `_provider_models` now supports arrays: `{ "zen": ["primary-model", "fallback-model"] }`
+  - Backward compatible: single string values still work
+  - Router tries fallback models in sequence with same retry logic
+  - Mid-stream failures prevent retrying same model (would duplicate content)
+  - `modelFallback` flag on attempt chunks for dashboard visibility
+  - Dashboard UI showing current fallback configuration in Models tab
+
+### Changed
+
+- **models.json** — added `_context_windows`, `_compaction_enabled`, `_compaction_threshold`, `_compaction_model`, `_compaction_tail_turns` fields
+- **Provider priority** — fallback models tried within provider before next provider
+
+---
+
 ## [1.0.10] — 2026-07-05
 
 ### Added

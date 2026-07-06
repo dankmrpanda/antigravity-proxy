@@ -103,6 +103,8 @@ Then open **http://localhost:4000** in your browser to configure providers, mode
 
 | Feature | Status | Description |
 |---------|--------|-------------|
+| **Auto context compaction** | ✅ | LLM-based summarization when approaching context limits |
+| **Model fallback per provider** | ✅ | Try multiple models within same provider before failover |
 | **Multi-provider failover** | ✅ | Priority chain with exponential backoff |
 | **Per-model routing** | ✅ | One row per model alias, one column per provider |
 | **Retry + backoff** | ✅ | Configurable per-provider and global |

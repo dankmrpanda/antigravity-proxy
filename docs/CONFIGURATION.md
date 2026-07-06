@@ -53,6 +53,10 @@ LOG_LEVEL=info
 | `RATE_LIMIT_GLOBAL` | Max requests per window across all providers (`0` = unlimited) | `60` |
 | `RATE_LIMIT_PROVIDER` | Max requests per window per provider (`0` = unlimited) | `30` |
 | `RATE_LIMIT_WINDOW_MS` | Rate limit window in milliseconds | `60000` |
+| `COMPACTION_ENABLED` | Enable auto context compaction | `true` |
+| `COMPACTION_THRESHOLD` | Trigger compaction at this % of context window | `0.8` |
+| `COMPACTION_MODEL` | Model for summarization (empty = use request model) | — |
+| `COMPACTION_TAIL_TURNS` | Recent turns to preserve verbatim | `2` |
 
 ### Supported Providers
 
@@ -91,9 +95,17 @@ All live in the same `models.json` file. The dashboard Models tab edits them.
   "_default_model": "stepfun-ai/step-3.7-flash",
   "_title_model": "gemini-3.5-flash",
   "_fallback_model": "",
+  "_context_windows": {
+    "mimo-v2.5-free": 128000,
+    "deepseek-v4-flash-free": 128000
+  },
+  "_compaction_enabled": true,
+  "_compaction_threshold": 0.8,
+  "_compaction_model": "",
+  "_compaction_tail_turns": 2,
   "_provider_models": {
     "gemini-3.5-flash": {
-      "zen": "deepseek-v4-flash-free"
+      "zen": ["mimo-v2.5-free", "deepseek-v4-flash-free"]
     },
     "claude-sonnet-4-6-thinking": {
       "nvidia": "minimaxai/minimax-m3"
@@ -115,7 +127,12 @@ All live in the same `models.json` file. The dashboard Models tab edits them.
 | `_default_model` | Resolved model name for unknown requests |
 | `_title_model` | Model used for title generation |
 | `_fallback_model` | Model used when primary fails |
-| `_provider_models` | Per-model provider overrides |
+| `_provider_models` | Per-model provider overrides (supports arrays for fallback) |
+| `_context_windows` | Manual context window size overrides for compaction |
+| `_compaction_enabled` | Enable/disable auto compaction |
+| `_compaction_threshold` | Compaction trigger threshold (0.1-1.0) |
+| `_compaction_model` | Model for summarization (empty = use request model) |
+| `_compaction_tail_turns` | Recent turns to preserve during compaction |
 
 ### Lookup order (per-model-per-provider mode)
 
@@ -260,8 +277,81 @@ When a provider returns an error, the router:
 
 1. Waits `backoffMs * 2^attempt` (detects rate limits → starts at 10s instead of 1s)
 2. Retries up to `PROXY_RETRIES` times (default 10)
-3. If all retries exhausted → tries the next provider in priority order
-4. If all providers fail → returns error to the client
+3. If all retries exhausted → tries fallback models within same provider (if configured)
+4. If all fallback models exhausted → tries the next provider in priority order
+5. If all providers fail → returns error to the client
+
+---
+
+## Auto Context Compaction
+
+When the total context (system prompt + messages + tools) approaches a provider's context window limit, the proxy automatically compacts older messages via LLM summarization before sending to the provider.
+
+### How it works
+
+1. Proxy estimates token count using chars/4 heuristic
+2. If estimate exceeds `COMPACTION_THRESHOLD` of context window → compaction triggers
+3. Preserves last `COMPACTION_TAIL_TURNS` turns (user+assistant pairs) verbatim
+4. Summarizes older messages using LLM with structured format:
+   - **Objective**: what the user is trying to accomplish
+   - **Important Details**: constraints, decisions, facts
+   - **Work State**: completed, active, blocked
+   - **Next Move**: immediate actions
+5. If LLM summarization fails → falls back to truncation (drops old messages)
+
+### Configuration
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `COMPACTION_ENABLED` | Enable/disable compaction | `true` |
+| `COMPACTION_THRESHOLD` | Trigger at this % of context window (0.1-1.0) | `0.8` |
+| `COMPACTION_MODEL` | Model for summarization (empty = same as request) | — |
+| `COMPACTION_TAIL_TURNS` | Recent turns to preserve verbatim | `2` |
+
+### Context window detection
+
+Context windows are auto-detected from provider APIs at startup. Manual overrides in `models.json`:
+
+```json
+{
+  "_context_windows": {
+    "gpt-4o": 128000,
+    "claude-sonnet-4-20250514": 200000,
+    "stepfun-ai/step-3.7-flash": 128000
+  }
+}
+```
+
+---
+
+## Model Fallback Per Provider
+
+Each provider can have multiple fallback models. If the primary model fails, the proxy tries fallback models in order before moving to the next provider.
+
+### Configuration
+
+In `models.json`, use array syntax for `_provider_models`:
+
+```json
+{
+  "_provider_models": {
+    "gemini-3.5-flash": {
+      "zen": ["mimo-v2.5-free", "deepseek-v4-flash-free"]
+    },
+    "gpt-oss-120b-medium": {
+      "nvidia": ["stepfun-ai/step-3.7-flash", "deepseek-v4-pro"]
+    }
+  }
+}
+```
+
+### Behavior
+
+- Primary model (first in array) goes through full model resolution
+- Fallback models are used as-is (already provider-specific)
+- Same retry logic applies to each fallback model
+- Mid-stream failures prevent retrying same model (would duplicate content)
+- Rate limit errors still trigger exponential backoff
 
 ---
 
