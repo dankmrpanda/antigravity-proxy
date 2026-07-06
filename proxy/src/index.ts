@@ -7,8 +7,7 @@ import { fileURLToPath } from 'url';
 import { config } from './config.js';
 import { logger } from './logger.js';
 import { validateApiKey } from './auth.js';
-import { streamResponse, saveReasoning, injectReasoning, extractConvId } from './engine.js';
-import { reloadRouter, getRouter } from './engine.js';
+import { streamResponse, saveReasoning, injectReasoning, extractConvId, reloadRouter, getRouter } from './engine.js';
 import { mapContentsToMessages, mapTools, mapGenerationConfig } from './mapper.js';
 import { requestStore } from './request-store.js';
 import { createDashboardHandler } from './dashboard.js';
@@ -25,7 +24,7 @@ import { getSessionId, setSessionId } from './session-store.js';
 import { safeWrite } from './utils/safe-write.js';
 import { formatErrorResponse } from './utils/error-response.js';
 import { injectContext } from './context-injector.js';
-import { compactIfNeeded, getCompactionConfig } from './compaction.js';
+import { compactIfNeeded } from './compaction.js';
 import { loadContextWindowsFromModels } from './context-windows.js';
 import type { Content, Tool, GenerationConfig } from './types.js';
 
@@ -413,13 +412,10 @@ async function handleStreamGenerate(req: http2.Http2ServerRequest, res: http2.Ht
   injectContext(mapped, config.contextStripMode);
 
   // Compaction: if context exceeds the model's window, summarize old messages
-  const compactionConfig = getCompactionConfig();
-  if (compactionConfig.enabled) {
-    const compacted = await compactIfNeeded(mapped, model, getRouter());
-    if (compacted !== mapped) {
-      mapped.messages = compacted.messages;
-      logger.info(`[compaction] Context compacted: ${mapped.messages.length} messages`);
-    }
+  const compacted = await compactIfNeeded(mapped, model, getRouter());
+  if (compacted !== mapped) {
+    mapped.messages = compacted.messages;
+    logger.info(`[compaction] Context compacted: ${mapped.messages.length} messages`);
   }
 
   // Calculate actual tokens being sent to provider (post-stripping + post-injection)
@@ -772,6 +768,8 @@ async function main(): Promise<void> {
     if (fs.existsSync(cwPath)) {
       const cwData = JSON.parse(fs.readFileSync(cwPath, 'utf-8'));
       loadContextWindowsFromModels(cwData);
+    } else {
+      logger.debug('[compaction] No context-windows.json found, using defaults');
     }
   } catch { /* no context-windows.json is fine — defaults apply */ }
   logger.info(`=== Antigravity Proxy (${config.provider}) ===`);
