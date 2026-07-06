@@ -14,6 +14,25 @@ const ENV_PATH = migrateConfig();
 
 dotenv.config({ path: ENV_PATH });
 
+const MODELS_JSON_PATH = path.resolve(__dirname, '..', 'models.json');
+
+function readCompactionSettings(): { compactionEnabled: boolean; compactionThreshold: number; compactionModel: string; compactionTailTurns: number } {
+  const defaults = { compactionEnabled: true, compactionThreshold: 0.8, compactionModel: '', compactionTailTurns: 2 };
+  try {
+    if (fs.existsSync(MODELS_JSON_PATH)) {
+      const raw = fs.readFileSync(MODELS_JSON_PATH, 'utf-8');
+      const file = JSON.parse(raw);
+      return {
+        compactionEnabled: typeof file._compaction_enabled === 'boolean' ? file._compaction_enabled : defaults.compactionEnabled,
+        compactionThreshold: typeof file._compaction_threshold === 'number' ? file._compaction_threshold : defaults.compactionThreshold,
+        compactionModel: typeof file._compaction_model === 'string' ? file._compaction_model : defaults.compactionModel,
+        compactionTailTurns: typeof file._compaction_tail_turns === 'number' ? file._compaction_tail_turns : defaults.compactionTailTurns,
+      };
+    }
+  } catch { /* use defaults */ }
+  return defaults;
+}
+
 const VALID_CONTEXT_STRIP_MODES = ['passthrough', 'strip', 'lite'];
 
 function validateContextStripMode(value: string): 'strip' | 'passthrough' {
@@ -89,6 +108,7 @@ function createConfig() {
     dashboardPassword: process.env.DASHBOARD_PASSWORD || '',
     failoverWebhookUrl: process.env.FAILOVER_WEBHOOK_URL || '',
     contextStripMode: validateContextStripMode(process.env.CONTEXT_STRIP_MODE || 'passthrough'),
+    ...readCompactionSettings(),
     providerPriority: parsePriority(),
     providers: buildProviders(parsePriority()),
     get localProviders(): ProviderConfig[] { return localProviders; },
@@ -142,6 +162,7 @@ function createConfig() {
       this.dashboardPassword = process.env.DASHBOARD_PASSWORD || '';
       this.failoverWebhookUrl = process.env.FAILOVER_WEBHOOK_URL || '';
       this.contextStripMode = validateContextStripMode(process.env.CONTEXT_STRIP_MODE || 'passthrough');
+      Object.assign(this, readCompactionSettings());
       this.providerPriority = parsePriority();
       this.providers = buildProviders(this.providerPriority, localProviders);
     },
