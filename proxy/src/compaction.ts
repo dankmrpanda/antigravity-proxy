@@ -1,6 +1,9 @@
 import { logger } from './logger.js';
 import { estimateMessageTokens, estimateSystemTokens, estimateToolTokens } from './token-estimator.js';
-import type { OpenAIMessage } from './mapper.js';
+import type { OpenAIMessage, MappedRequest } from './mapper.js';
+import type { Router } from './router.js';
+import { config } from './config.js';
+import { getContextWindow } from './context-windows.js';
 
 const DEFAULT_THRESHOLD = 0.8;
 const DEFAULT_TAIL_TURNS = 2;
@@ -74,11 +77,77 @@ export async function compactMessages(
   if (toCompact.length === 0) return messages;
 
   logger.info(`[compaction] Compacting ${toCompact.length} messages, preserving ${toPreserve.length}`);
-  // Placeholder - actual LLM call will be added in Task 4
   return [
     { role: 'user', content: '[Context compacted - summary placeholder]' },
     ...toPreserve,
   ];
+}
+
+/**
+ * Attempt LLM-powered compaction. Falls back to truncation on failure.
+ * Returns the mapped request with messages compacted if needed.
+ */
+export async function compactIfNeeded(
+  mapped: MappedRequest,
+  model: string,
+  router: Router,
+): Promise<MappedRequest> {
+  const cfg = getCompactionConfig();
+  if (!cfg.enabled) return mapped;
+
+  const contextWindow = getContextWindow(model);
+  const system = mapped.system || '';
+  const tools = mapped.tools as Record<string, unknown> | undefined;
+
+  if (!needsCompaction(system, mapped.messages, tools, contextWindow, cfg.threshold)) {
+    return mapped;
+  }
+
+  logger.info(`[compaction] Compaction needed for model ${model} (window: ${contextWindow})`);
+
+  const { toCompact, toPreserve } = selectMessagesToCompact(mapped.messages, cfg.tailTurns);
+  if (toCompact.length === 0) return mapped;
+
+  const prompt = buildSummarizationPrompt(toCompact);
+  const compactionModel = cfg.model || model;
+
+  try {
+    const providerIds = config.providerPriority;
+    // Use router's execute to get a non-streaming summary
+    let summary = '';
+    const gen = router.execute(
+      providerIds as any,
+      compactionModel,
+      [{ role: 'user', content: prompt }],
+      undefined,
+      { maxTokens: 2048, temperature: 0.3 },
+    );
+
+    for await (const chunk of gen) {
+      if (chunk.type === 'text') summary += chunk.content || '';
+      if (chunk.type === 'error') throw new Error(chunk.content || 'compaction LLM error');
+    }
+
+    if (!summary.trim()) {
+      throw new Error('Empty summary from LLM');
+    }
+
+    logger.info(`[compaction] LLM summary obtained (${summary.length} chars)`);
+
+    const compactedMessages: OpenAIMessage[] = [
+      { role: 'user', content: `[Context compacted]\n${summary}` },
+      ...toPreserve,
+    ];
+
+    return { ...mapped, messages: compactedMessages };
+  } catch (err: any) {
+    logger.warn(`[compaction] LLM summarization failed, falling back to truncation: ${err.message}`);
+    const fallbackMessages: OpenAIMessage[] = [
+      { role: 'user', content: '[Context compacted - earlier conversation truncated]' },
+      ...toPreserve,
+    ];
+    return { ...mapped, messages: fallbackMessages };
+  }
 }
 
 export function getCompactionConfig() {
