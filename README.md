@@ -21,6 +21,9 @@
   <img src="https://img.shields.io/badge/node-%3E%3D20-brightgreen" alt="Node >=20">
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey" alt="Platform">
+  <a href="https://discord.gg/DaPXNq87Ds">
+    <img src="https://img.shields.io/badge/Discord-Join%20the%20Community-5865F2?logo=discord&logoColor=white" alt="Discord">
+  </a>
 </p>
 
 ---
@@ -425,6 +428,7 @@ CONTEXT_STRIP_MODE=lite             # lite (recommended) | strip | passthrough
 - [CHANGELOG](CHANGELOG.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security Policy](SECURITY.md)
+- [Join the Discord Community](https://discord.gg/DaPXNq87Ds) ← **Get help, share setups, and chat with other users**
 
 ---
 
