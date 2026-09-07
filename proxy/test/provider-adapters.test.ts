@@ -13,6 +13,7 @@ import assert from 'node:assert/strict';
 import { GroqAdapter } from '../src/adapters/groq.js';
 import { ZenAdapter } from '../src/adapters/zen.js';
 import { NvidiaAdapter } from '../src/adapters/nvidia.js';
+import { OpenAICompatAdapter } from '../src/adapters/openai.js';
 import type { OpenAIMessage } from '../src/mapper.js';
 
 // ─── GroqAdapter tests ───────────────────────────────────────────────────
@@ -226,7 +227,15 @@ test('A3: NvidiaAdapter serializes tools correctly', () => {
   assert.equal(body.tools[0].function.name, 'search');
 });
 
-// ─── Cross-adapter consistency tests ─────────────────────────────────────
+test('A4: serializeMessages normalizes null content to empty string', () => {
+  const adapter = new OpenAICompatAdapter('go', 'http://go', 'k');
+  const out = (adapter as any).serializeMessages([
+    { role: 'assistant', content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'x', arguments: '{}' } }] },
+    { role: 'user', content: 'hi' },
+  ]);
+  assert.equal(out[0].content, '', 'null content must become empty string (strict gateways reject null)');
+  assert.equal(out[1].content, 'hi');
+});
 
 test('A4: All provider adapters set model and stream:true', () => {
   const groq = new GroqAdapter('groq', 'http://groq', 'k');

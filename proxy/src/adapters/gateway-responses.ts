@@ -10,6 +10,7 @@ import { randomUUID } from 'crypto';
 import type { OpenAIMessage } from '../mapper.js';
 import type { StreamChunk, ModelAdapter } from './types.js';
 import { poolFetch } from '../http-pool.js';
+import { logger } from '../logger.js';
 import { parseToolArgs } from '../utils/parse-tool-args.js';
 
 /** Convert OpenAI-style messages to Responses `input` items. */
@@ -188,6 +189,9 @@ export class GatewayResponsesAdapter implements ModelAdapter {
     });
     if (!response.ok) {
       const err = await response.text().catch(() => 'unknown');
+      logger.debug(`[${this.provider}] rejected body for ${model}`, {
+        body: JSON.stringify(body).substring(0, 4000),
+      });
       throw new Error(`[${this.provider}] API error ${response.status}: ${err}`);
     }
 

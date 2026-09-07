@@ -2,6 +2,7 @@ import type { OpenAIMessage } from '../mapper.js';
 import type { StreamChunk, ModelAdapter } from './types.js';
 import { poolFetch } from '../http-pool.js';
 import { getEffortForModel } from '../reasoning-effort.js';
+import { logger } from '../logger.js';
 import { parseToolArgs } from '../utils/parse-tool-args.js';
 
 /**
@@ -247,7 +248,10 @@ export class OpenAICompatAdapter implements ModelAdapter {
         }).filter(Boolean);
         out.content = cleaned.length === 0 ? '' : cleaned;
       } else {
-        out.content = m.content;
+        // Null content (emitted by the mapper for tool-call-only assistant
+        // turns) is spec-legal but rejected as "illegal" by strict gateways —
+        // normalize to '' which is accepted everywhere null is.
+        out.content = m.content ?? '';
       }
       if (m.tool_calls) out.tool_calls = m.tool_calls;
       if (m.tool_call_id) out.tool_call_id = m.tool_call_id;
@@ -272,6 +276,11 @@ export class OpenAICompatAdapter implements ModelAdapter {
     });
     if (!response.ok) {
       const err = await response.text().catch(() => 'unknown');
+      // Debug-level exact body: 400s like "[1214] messages illegal" are only
+      // diagnosable with the precise payload. Never logged at default levels.
+      logger.debug(`[${this.provider}] rejected body for ${body['model']}`, {
+        body: JSON.stringify(body).substring(0, 4000),
+      });
       throw new Error(`[${this.provider}] API error ${response.status}: ${err}`);
     }
     return response;

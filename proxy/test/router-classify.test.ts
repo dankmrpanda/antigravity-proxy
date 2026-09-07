@@ -67,6 +67,7 @@ test('C3: unknown errors default to retry (safe)', () => {
 test('C4: isAccountFailure flags billing errors only', () => {
   assert.ok(isAccountFailure('[opencode-go] API error 401: {"type":"error","error":{"type":"CreditsError","message":"Insufficient balance"}}'));
   assert.ok(isAccountFailure('[opencode-go] API error 403: {"type":"error","error":{"type":"RegionError","message":"requires explicit opt in"}}'));
+  assert.ok(isAccountFailure('[opencode-go] API error 403: {"type":"error","error":{"type":"DataPolicyError","message":"requires explicit opt in"}}'));
   assert.ok(!isAccountFailure('[zen] API error 500: Internal server error'));
   assert.ok(!isAccountFailure('[nvidia] API error 429: Too Many Requests'));
 });

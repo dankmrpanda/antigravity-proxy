@@ -235,6 +235,9 @@ export class AnthropicAdapter implements ModelAdapter {
     });
     if (!response.ok) {
       const err = await response.text().catch(() => 'unknown');
+      logger.debug(`[${this.provider}] rejected body`, {
+        body: JSON.stringify(body).substring(0, 4000),
+      });
       throw new Error(`[${this.provider}] API error ${response.status}: ${err}`);
     }
     return response;

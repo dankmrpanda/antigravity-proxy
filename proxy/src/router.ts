@@ -43,7 +43,7 @@ export function classifyProviderError(message: string): ProviderErrorClass {
 
 /** Account/billing failures need human action in the provider console. */
 export function isAccountFailure(message: string): boolean {
-  return /CreditsError|Insufficient balance|billing|RegionError|opt in/i.test(message || '');
+  return /CreditsError|Insufficient balance|billing|RegionError|DataPolicyError|opt in/i.test(message || '');
 }
 
 export class Router {
