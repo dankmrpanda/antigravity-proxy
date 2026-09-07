@@ -2,6 +2,7 @@ import { config } from './config.js';
 import { logger } from './logger.js';
 import { Router } from './router.js';
 import { modelResolver } from './models.js';
+import { reload as reloadReasoningEffort } from './reasoning-effort.js';
 import { ANTIGRAVITY_CONTEXT } from './antigravity-context.js';
 import { registerBuiltinPlugins } from './plugins/builtin-plugins.js';
 import { toolCapabilityRegistry } from './tool-capabilities.js';
@@ -111,6 +112,7 @@ export function reloadRouter(): void {
     router.updateProviders(config.providers, { retries: config.retries, backoffMs: config.backoffMs });
   }
   modelResolver.reload();
+  reloadReasoningEffort();
   logger.info('[engine] Router, config, and model maps reloaded');
 }
 

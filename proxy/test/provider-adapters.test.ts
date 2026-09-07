@@ -105,7 +105,7 @@ test('A1: GroqAdapter passes standard params correctly', () => {
 
 // ─── ZenAdapter tests ────────────────────────────────────────────────────
 
-test('A2: ZenAdapter forwards reasoning_effort from providerOptions', () => {
+test('A2: ZenAdapter always sends reasoning_effort=max', () => {
   const adapter = new ZenAdapter('zen', 'https://opencode.ai/zen/v1', 'test-key');
   const body = (adapter as any).buildRequest(
     'deepseek-r1',
@@ -113,10 +113,10 @@ test('A2: ZenAdapter forwards reasoning_effort from providerOptions', () => {
     undefined,
     { providerOptions: { openai: { reasoningEffort: 'high' } } },
   ) as any;
-  assert.equal(body.reasoning_effort, 'high', 'should forward reasoning_effort from providerOptions');
+  assert.equal(body.reasoning_effort, 'max', 'must use max effort even when high requested');
 });
 
-test('A2: ZenAdapter does not set reasoning_effort when not configured', () => {
+test('A2: ZenAdapter sends reasoning_effort=max when not configured', () => {
   const adapter = new ZenAdapter('zen', 'https://opencode.ai/zen/v1', 'test-key');
   const body = (adapter as any).buildRequest(
     'deepseek-r1',
@@ -124,7 +124,7 @@ test('A2: ZenAdapter does not set reasoning_effort when not configured', () => {
     undefined,
     {},
   ) as any;
-  assert.equal(body.reasoning_effort, undefined, 'should not set reasoning_effort when not configured');
+  assert.equal(body.reasoning_effort, 'max', 'must always use max effort');
 });
 
 test('A2: ZenAdapter passes standard params correctly', () => {

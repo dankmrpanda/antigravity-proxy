@@ -21,6 +21,31 @@ export interface RouterOptions {
 
 const DEFAULT_OPTIONS: RouterOptions = { retries: 10, backoffMs: 1000 };
 
+export type ProviderErrorClass = 'retry' | 'failover';
+
+// Matched first: these are always worth backing off and retrying.
+const RETRYABLE_PATTERNS = [/429/, /rate_limit/i, /413/, /Request too large/i, /API error 5\d\d/, /timeout/i, /timed out/i, /fetch failed/i, /ECONN/i, /socket hang up/i, /Too Many Requests/];
+
+// Only reached when nothing retryable matched: the same request can never
+// succeed, so fail over immediately instead of burning latency/quota/money.
+const DETERMINISTIC_PATTERNS = [/API error 400/, /API error 401/, /API error 403/, /API error 404/, /API error 410/, /which this proxy does not support/, /FreeUsageLimitError/];
+
+/**
+ * Classify a provider failure as retryable (429/5xx/network — back off and
+ * retry) or deterministic (400/401/403/404/410 … — fail over without retrying).
+ */
+export function classifyProviderError(message: string): ProviderErrorClass {
+  const msg = message || '';
+  if (RETRYABLE_PATTERNS.some((r) => r.test(msg))) return 'retry';
+  if (DETERMINISTIC_PATTERNS.some((r) => r.test(msg))) return 'failover';
+  return 'retry';
+}
+
+/** Account/billing failures need human action in the provider console. */
+export function isAccountFailure(message: string): boolean {
+  return /CreditsError|Insufficient balance|billing|RegionError|opt in/i.test(message || '');
+}
+
 export class Router {
   private adapters = new Map<string, ModelAdapter>();
   private options: RouterOptions;
@@ -185,7 +210,24 @@ export class Router {
               logger.error(`[router] ${providerId} model ${resolvedModel} failed mid-stream — cannot retry, failing over: ${err.message}`);
               fireFailoverWebhook(providerId, resolvedModel, err.message, 'failover');
               yield { type: 'attempt', provider: providerId, resolvedModel, attempt: attempt + 1, status: 'failover', ...(isFallbackModel ? { modelFallback: true } : {}) };
+              lastError = err.message;
               break; // Break out of retry loop, try next fallback model or next provider
+            }
+
+            // Deterministic failures (400/401/403/404/410 …) can never succeed
+            // on retry. Account-wide failures skip the provider's remaining
+            // models too; model-specific ones advance to the next fallback model.
+            if (classifyProviderError(err.message) === 'failover') {
+              if (isAccountFailure(err.message)) {
+                logger.error(`[router] ${providerId} account/billing failure (check console billing or usage limits) — failing over without retry: ${err.message}`);
+                providerFullyFailed = true;
+              } else {
+                logger.warn(`[router] ${providerId} model ${resolvedModel} deterministic failure — failing over without retry: ${err.message}`);
+              }
+              fireFailoverWebhook(providerId, resolvedModel, err.message, 'failover');
+              yield { type: 'attempt', provider: providerId, resolvedModel, attempt: attempt + 1, status: 'failover', ...(isFallbackModel ? { modelFallback: true } : {}) };
+              lastError = err.message;
+              break;
             }
 
             const isLastAttempt = attempt >= perProviderRetries;
@@ -209,6 +251,7 @@ export class Router {
               logger.warn(`[router] ${providerId} model ${resolvedModel} exhausted: ${err.message}`);
               fireFailoverWebhook(providerId, resolvedModel, err.message, 'failover');
               yield { type: 'attempt', provider: providerId, resolvedModel, attempt: attempt + 1, status: 'failover', ...(isFallbackModel ? { modelFallback: true } : {}) };
+              lastError = err.message;
             }
           }
         }
@@ -310,6 +353,22 @@ export class Router {
                 logger.error(`[router] ${providerId} (fallback) model ${resolvedModel} failed mid-stream — failing over: ${err.message}`);
                 fireFailoverWebhook(providerId, resolvedModel, err.message, 'failover');
                 yield { type: 'attempt', provider: providerId, resolvedModel, attempt: attempt + 1, status: 'failover', fallback: true, ...(isFallbackModel ? { modelFallback: true } : {}) };
+                lastError = err.message;
+                break;
+              }
+              // Deterministic failures never succeed on retry — advance to the
+              // next fallback model (or provider). Account-wide failures skip
+              // the provider's remaining models too.
+              if (classifyProviderError(err.message) === 'failover') {
+                if (isAccountFailure(err.message)) {
+                  logger.error(`[router] ${providerId} (fallback) account/billing failure (check console billing or usage limits) — trying next without retry: ${err.message}`);
+                  providerFullyFailed = true;
+                } else {
+                  logger.warn(`[router] ${providerId} model ${resolvedModel} (fallback) deterministic failure — trying next without retry: ${err.message}`);
+                }
+                fireFailoverWebhook(providerId, resolvedModel, err.message, 'failover');
+                yield { type: 'attempt', provider: providerId, resolvedModel, attempt: attempt + 1, status: 'failover', fallback: true, ...(isFallbackModel ? { modelFallback: true } : {}) };
+                lastError = err.message;
                 break;
               }
               const isLastAttempt = attempt >= fallbackRetries;
@@ -332,6 +391,7 @@ export class Router {
                 logger.warn(`[router] ${providerId} model ${resolvedModel} (fallback) exhausted: ${err.message}`);
                 fireFailoverWebhook(providerId, resolvedModel, err.message, 'failover');
                 yield { type: 'attempt', provider: providerId, resolvedModel, attempt: attempt + 1, status: 'failover', fallback: true };
+                lastError = err.message;
               }
             }
           }

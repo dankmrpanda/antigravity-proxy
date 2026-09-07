@@ -59,7 +59,7 @@ export class OpenAICompatAdapter implements ModelAdapter {
       ? [{ role: 'system' as const, content: system }, ...messages]
       : messages;
     const body = this.buildRequest(model, finalMessages, tools, config);
-    const response = await this.fetchWithRetry(body, signal);
+    const response = await this.fetchWithRetry(body, signal, config);
 
     if (!this.isStreaming(response)) {
       const data = await response.json() as any;
@@ -204,7 +204,7 @@ export class OpenAICompatAdapter implements ModelAdapter {
 
   // Providers that support OpenAI-specific params like reasoning_effort
   // (kept for potential future per-provider guards; effort is now driven by model config)
-  private static REASONING_PROVIDERS = new Set(['openai', 'zen', 'opencode-go', 'nvidia', 'openrouter', 'groq']);
+  private static REASONING_PROVIDERS = new Set(['openai', 'zen', 'opencode-go', 'nvidia', 'openrouter', 'groq', 'minimax']);
 
   protected buildRequest(
     model: string,
@@ -256,13 +256,17 @@ export class OpenAICompatAdapter implements ModelAdapter {
     });
   }
 
-  protected async fetchWithRetry(body: Record<string, unknown>, signal?: AbortSignal): Promise<Response> {
+  protected buildHeaders(config?: Record<string, unknown>): Record<string, string> {
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${this.apiKey}`,
+    };
+  }
+
+  protected async fetchWithRetry(body: Record<string, unknown>, signal?: AbortSignal, config?: Record<string, unknown>): Promise<Response> {
     const response = await poolFetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`,
-      },
+      headers: this.buildHeaders(config),
       body: JSON.stringify(body),
       signal,
     });
