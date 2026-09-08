@@ -84,7 +84,9 @@ function parseEnvFile(): void {
     const raw = fs.readFileSync(ENV_PATH, 'utf-8');
     for (const line of raw.split('\n')) {
       const m = line.match(/^([A-Z_]+)=(.*)/);
-      if (m) process.env[m[1]] = m[2].trim();
+      // Strip trailing ` # comment` like dotenv does (only when the `#`
+      // is preceded by whitespace, so values containing `#` are kept).
+      if (m) process.env[m[1]] = m[2].split(/\s+#/)[0].trim();
     }
   } catch { /* ignore */ }
 }

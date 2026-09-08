@@ -359,7 +359,7 @@ fi
 
 # ── Wait for dashboard ────────────────────────────────────────────────────────
 step "Waiting for dashboard..."
-API_PORT=$(grep -E "^API_PORT=" "$PROXY_DIR/.env" 2>/dev/null | cut -d= -f2 | tr -d ' ' || echo "4000")
+API_PORT=$(grep -E "^API_PORT=" "$PROXY_DIR/.env" 2>/dev/null | cut -d= -f2 | cut -d'#' -f1 | tr -d '[:space:]' || echo "4000")
 API_PORT="${API_PORT:-4000}"
 HTTP_STATUS="000"
 for _i in $(seq 1 20); do
