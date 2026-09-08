@@ -20,6 +20,7 @@ import { GroqAdapter } from '../adapters/groq.js';
 import { ZenAdapter } from '../adapters/zen.js';
 import { OpencodeGoAdapter } from '../adapters/opencode-go.js';
 import { NvidiaAdapter } from '../adapters/nvidia.js';
+import { MetaAdapter } from '../adapters/meta.js';
 import { DEFAULT_CAPABILITIES } from '../provider-plugin.js';
 
 // ─── Provider definitions ──────────────────────────────────────────────
@@ -99,6 +100,14 @@ const BUILTIN_PROVIDERS: ProviderDef[] = [
     capabilities: { supportsReasoning: true, supportsImages: false },
   },
   {
+    id: 'meta',
+    name: 'Meta Model API',
+    envKey: 'MODEL_API_KEY',
+    baseUrl: 'https://api.meta.ai/v1',
+    adapterType: 'openai',
+    capabilities: { supportsReasoning: true, supportsImages: true, supportsSystemMessages: true },
+  },
+  {
     id: 'ollama',
     name: 'Ollama (Local)',
     envKey: '',
@@ -137,6 +146,8 @@ function createAdapterForType(type: 'openai' | 'anthropic' | 'google', cfg: Prov
       return new OpencodeGoAdapter(cfg.id, cfg.baseUrl || BUILTIN_PROVIDERS.find(p => p.id === cfg.id)?.baseUrl || '', cfg.apiKey || '');
     case 'nvidia':
       return new NvidiaAdapter(cfg.id, cfg.baseUrl || BUILTIN_PROVIDERS.find(p => p.id === cfg.id)?.baseUrl || '', cfg.apiKey || '');
+    case 'meta':
+      return new MetaAdapter(cfg.id, cfg.baseUrl || BUILTIN_PROVIDERS.find(p => p.id === cfg.id)?.baseUrl || '', cfg.apiKey || '');
   }
   switch (type) {
     case 'openai':

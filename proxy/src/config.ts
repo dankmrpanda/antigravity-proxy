@@ -33,11 +33,12 @@ function readCompactionSettings(): { compactionEnabled: boolean; compactionThres
   return defaults;
 }
 
-const VALID_CONTEXT_STRIP_MODES = ['passthrough', 'strip', 'lite'];
+const VALID_CONTEXT_STRIP_MODES = ['passthrough', 'strip', 'lite'] as const;
+export type ContextStripMode = (typeof VALID_CONTEXT_STRIP_MODES)[number];
 
-function validateContextStripMode(value: string): 'strip' | 'passthrough' {
-  if (VALID_CONTEXT_STRIP_MODES.includes(value)) {
-    return value as 'strip' | 'passthrough';
+function validateContextStripMode(value: string): ContextStripMode {
+  if ((VALID_CONTEXT_STRIP_MODES as readonly string[]).includes(value)) {
+    return value as ContextStripMode;
   }
   logger.warn(`Invalid CONTEXT_STRIP_MODE '${value}', defaulting to 'passthrough'`);
   return 'passthrough';
@@ -52,6 +53,8 @@ function parsePriority(): ProviderId[] {
 
 const ENV_KEY_OVERRIDES: Partial<Record<ProviderId, { apiKey?: string; baseUrl?: string }>> = {
   zen: { apiKey: 'OPENCODE_API_KEY', baseUrl: 'OPENCODE_BASE_URL' },
+  // Meta Model API uses MODEL_API_KEY per https://ai.developer.meta.com/docs
+  meta: { apiKey: 'MODEL_API_KEY', baseUrl: 'META_BASE_URL' },
 };
 
 function buildProviders(priority: ProviderId[], localConfigs?: ProviderConfig[]): ProviderConfig[] {
@@ -137,7 +140,26 @@ function createConfig() {
       return this.legacyProvider;
     },
     get baseUrl(): string {
-      return this.legacyProvider === 'nvidia' ? this.nvidiaBaseUrl : this.openrouterBaseUrl;
+      if (this.legacyProvider === 'nvidia') return this.nvidiaBaseUrl;
+      if (this.legacyProvider === 'openrouter') return this.openrouterBaseUrl;
+      // Any other primary provider (meta, zen, …): resolve from the provider list,
+      // falling back to the registered defaults (buildProviders leaves baseUrl
+      // undefined when no env override is set; adapters apply the same fallback).
+      const primary = this.providers.find((p: ProviderConfig) => p.id === this.legacyProvider);
+      if (primary?.baseUrl) return primary.baseUrl;
+      // Local fallback map (mirrors DEFAULT_PROVIDER_CONFIGS in adapter.ts).
+      // Kept local to avoid a runtime import cycle:
+      // config → adapter → adapters/openai → logger → config.
+      const FALLBACK_BASE_URLS: Record<string, string> = {
+        meta: 'https://api.meta.ai/v1',
+        zen: 'https://opencode.ai/zen/v1',
+        'opencode-go': 'https://opencode.ai/zen/go/v1',
+        openai: 'https://api.openai.com/v1',
+        groq: 'https://api.groq.com/openai/v1',
+        anthropic: 'https://api.anthropic.com/v1',
+        google: 'https://generativelanguage.googleapis.com',
+      };
+      return FALLBACK_BASE_URLS[this.legacyProvider] || this.openrouterBaseUrl;
     },
     get apiKey(): string {
       return this.legacyProvider === 'nvidia' ? this.nvidiaApiKey : this.openrouterApiKey;

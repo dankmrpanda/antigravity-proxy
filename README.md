@@ -212,6 +212,7 @@ graph TD
 | **Google Gemini** | Cloud API | `GOOGLE_API_KEY` | Gemini 2.5 Pro/Flash |
 | **OpenCode Zen** | Cloud gateway | `OPENCODE_API_KEY` | Claude, GPT, Gemini, Grok, Kimi, GLM — one key |
 | **OpenCode Go** | Cloud gateway | `OPENCODE_GO_API_KEY` | DeepSeek, Qwen, MiniMax, GLM, Kimi, MiMo — $10/mo |
+| **Meta Model API** | Cloud API | `MODEL_API_KEY` | Muse Spark 1.3 (max thinking, 1M context) — direct, `https://api.meta.ai/v1` |
 
 ### Local Inference
 

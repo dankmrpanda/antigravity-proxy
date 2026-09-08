@@ -1,14 +1,16 @@
 # Configuration Guide
 
-## Provider Configuration: `proxy/.env`
+## Provider Configuration: `~/.antigravity/.env`
 
 Edit this file from the dashboard Config tab or directly.
+(`proxy/.env` is migrated here automatically on first run.)
 
 ```ini
 # Provider priority order (comma-separated, first = primary)
-PROVIDER_PRIORITY=openrouter,nvidia,groq,openai
+PROVIDER_PRIORITY=meta,openrouter,nvidia
 
 # API keys (only those for your active providers)
+MODEL_API_KEY=...
 OPENROUTER_API_KEY=sk-or-v1-abc123...
 NVIDIA_API_KEY=nvapi-abc123...
 GROQ_API_KEY=gsk_abc123...

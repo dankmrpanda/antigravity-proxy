@@ -58,6 +58,9 @@ export const REASONING_EFFORT_PATTERNS: { pattern: RegExp; provider: string; lab
   { pattern: /glm.*think/i,                            provider: 'zhipu',     label: 'GLM Thinking' },
   // Kimi thinking
   { pattern: /kimi.*think/i,                           provider: 'moonshot',  label: 'Kimi Thinking' },
+  // Meta Muse Spark (direct Meta Model API + via Zen gateway)
+  { pattern: /muse[-_.]?spark/i,                       provider: 'meta',      label: 'Muse Spark' },
+  { pattern: /muse[-_.]?image/i,                       provider: 'meta',      label: 'Muse Image' },
   // Generic thinking/reasoning suffix patterns
   { pattern: /-thinking$/i,                            provider: 'generic',   label: 'Thinking model' },
   { pattern: /[-/]thinking[-/]/i,                      provider: 'generic',   label: 'Thinking model' },

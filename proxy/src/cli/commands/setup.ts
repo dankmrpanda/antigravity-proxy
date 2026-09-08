@@ -5,6 +5,7 @@ import { USER_ENV_PATH as ENV_PATH, ENV_EXAMPLE } from '../utils/paths.js';
 import { header, section, ok, warn, info, confirm, prompt, select, maskKey, arrow, divider } from '../ui.js';
 
 const PROVIDERS = [
+  { id: 'meta', name: 'Meta Model API (Muse Spark)', envKey: 'MODEL_API_KEY', placeholder: '...' },
   { id: 'openrouter', name: 'OpenRouter', envKey: 'OPENROUTER_API_KEY', placeholder: 'sk-or-v1-...' },
   { id: 'nvidia', name: 'NVIDIA', envKey: 'NVIDIA_API_KEY', placeholder: 'nvapi-...' },
   { id: 'openai', name: 'OpenAI', envKey: 'OPENAI_API_KEY', placeholder: 'sk-...' },

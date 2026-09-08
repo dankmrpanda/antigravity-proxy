@@ -4,6 +4,7 @@ import { GroqAdapter } from './adapters/groq.js';
 import { ZenAdapter } from './adapters/zen.js';
 import { OpencodeGoAdapter } from './adapters/opencode-go.js';
 import { NvidiaAdapter } from './adapters/nvidia.js';
+import { MetaAdapter } from './adapters/meta.js';
 import { AnthropicAdapter } from './adapters/anthropic.js';
 import { GoogleAdapter } from './adapters/google.js';
 import { providerRegistry } from './provider-registry.js';
@@ -33,6 +34,7 @@ export const DEFAULT_PROVIDER_CONFIGS: Record<string, { baseUrl: string; adapter
   google:    { baseUrl: 'https://generativelanguage.googleapis.com',    adapterType: 'google',    envKey: 'GOOGLE_API_KEY' },
   zen:       { baseUrl: 'https://opencode.ai/zen/v1',                  adapterType: 'openai',    envKey: 'OPENCODE_API_KEY' },
   'opencode-go': { baseUrl: 'https://opencode.ai/zen/go/v1',         adapterType: 'openai',    envKey: 'OPENCODE_GO_API_KEY' },
+  meta:      { baseUrl: 'https://api.meta.ai/v1',                    adapterType: 'openai',    envKey: 'MODEL_API_KEY' },
   ollama:    { baseUrl: 'http://localhost:11434',                      adapterType: 'openai',    envKey: '' },
   vllm:      { baseUrl: 'http://localhost:8000',                       adapterType: 'openai',    envKey: '' },
   lmstudio:  { baseUrl: 'http://localhost:1234',                       adapterType: 'openai',    envKey: '' },
@@ -73,6 +75,8 @@ export function createAdapter(cfg: ProviderConfig): ModelAdapter {
       return new OpencodeGoAdapter(cfg.id, baseUrl, apiKey);
     case 'nvidia':
       return new NvidiaAdapter(cfg.id, baseUrl, apiKey);
+    case 'meta':
+      return new MetaAdapter(cfg.id, baseUrl, apiKey);
   }
   switch (defaults.adapterType) {
     case 'openai':

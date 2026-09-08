@@ -20,6 +20,7 @@ const PROVIDER_META: Record<string, { baseUrl: string; envKey: string }> = {
   google:    { baseUrl: 'https://generativelanguage.googleapis.com',    envKey: 'GOOGLE_API_KEY' },
   zen:       { baseUrl: 'https://opencode.ai/zen/v1',                  envKey: 'OPENCODE_API_KEY' },
   'opencode-go': { baseUrl: 'https://opencode.ai/zen/go/v1',         envKey: 'OPENCODE_GO_API_KEY' },
+  meta:      { baseUrl: 'https://api.meta.ai/v1',                    envKey: 'MODEL_API_KEY' },
   ollama:    { baseUrl: 'http://localhost:11434',                      envKey: '' },
   vllm:      { baseUrl: 'http://localhost:8000',                       envKey: '' },
   lmstudio:  { baseUrl: 'http://localhost:1234',                       envKey: '' },

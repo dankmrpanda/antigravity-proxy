@@ -288,6 +288,11 @@
           <input type="password" autocomplete="new-password" id="cfgGoKey" placeholder="sk-opencode-go-...">
           <div class="hint">From <span style="color:var(--accent2)">opencode.ai/auth</span> — paid tier ($10/mo): DeepSeek, Qwen, MiniMax, GLM, Kimi, MiMo</div>
         </div>
+        <div class="form-group">
+          <label><span style="display:inline-block;width:14px;height:14px;mask-image:url(https://cdn.jsdelivr.net/npm/simple-icons@latest/icons/meta.svg);-webkit-mask-image:url(https://cdn.jsdelivr.net/npm/simple-icons@latest/icons/meta.svg);mask-size:contain;-webkit-mask-size:contain;background:#08f;vertical-align:middle;margin-right:6px"></span>Meta Model API Key <span id="metaKeyStatus" style="font-size:11px;color:var(--text3);font-weight:400">—</span></label>
+          <input type="password" autocomplete="new-password" id="cfgMetaKey" placeholder="MODEL_API_KEY from dev.meta.ai">
+          <div class="hint">From <span style="color:var(--accent2)">dev.meta.ai</span> — direct Muse Spark 1.3 (max thinking, 1M context)</div>
+        </div>
       </form></div>
 
       <div class="form-section">
@@ -1045,6 +1050,7 @@ async function reloadAll() {
     document.getElementById('googleKeyStatus').textContent = s.env.GOOGLE_API_KEY ? '✓ configured' : '○ not set';
     document.getElementById('zenKeyStatus').textContent = s.env.OPENCODE_API_KEY ? '✓ configured' : '○ not set';
     document.getElementById('goKeyStatus').textContent = s.env.OPENCODE_GO_API_KEY ? '✓ configured' : '○ not set';
+    document.getElementById('metaKeyStatus').textContent = s.env.MODEL_API_KEY ? '✓ configured' : '○ not set';
   } catch (e) {}
   loadLocalProviders();
 }
@@ -1337,6 +1343,7 @@ const PROVIDER_META = {
   google:     { label: 'Google',     color: '#48e', desc: 'Gemini models API', logo: 'https://cdn.jsdelivr.net/npm/simple-icons@latest/icons/googlegemini.svg', logoMask: true },
   zen:        { label: 'Zen',        color: '#0af', desc: 'OpenCode Zen gateway', logo: 'https://opencode.ai/favicon.ico' },
   'opencode-go': { label: 'OpenCode Go', color: '#0c8', desc: 'OpenCode Go ($10/mo)', logo: 'https://opencode.ai/favicon.ico' },
+  meta:       { label: 'Meta',       color: '#08f', desc: 'Meta Model API (Muse Spark)', logo: 'https://cdn.jsdelivr.net/npm/simple-icons@latest/icons/meta.svg', logoMask: true },
   ollama:     { label: 'Ollama',     color: '#888', desc: 'Local: localhost:11434', logo: 'https://cdn.jsdelivr.net/npm/simple-icons@latest/icons/ollama.svg', logoMask: true },
   vllm:       { label: 'vLLM',       color: '#888', desc: 'Local: localhost:8000', logo: 'https://cdn.jsdelivr.net/npm/simple-icons@latest/icons/vllm.svg', logoMask: true },
   lmstudio:   { label: 'LM Studio',  color: '#888', desc: 'Local: localhost:1234', logo: 'https://cdn.jsdelivr.net/npm/simple-icons@latest/icons/lmstudio.svg', logoMask: true },
@@ -1444,6 +1451,7 @@ async function saveConfig() {
     GOOGLE_API_KEY: document.getElementById('cfgGoogleKey').value.trim(),
     OPENCODE_API_KEY: document.getElementById('cfgZenKey').value.trim(),
     OPENCODE_GO_API_KEY: document.getElementById('cfgGoKey').value.trim(),
+    MODEL_API_KEY: document.getElementById('cfgMetaKey').value.trim(),
     PROXY_PORT: document.getElementById('cfgProxyPort').value,
     API_PORT: document.getElementById('cfgApiPort').value,
     LOG_LEVEL: document.getElementById('cfgLogLevel').value,
@@ -1578,6 +1586,7 @@ const PROVIDER_OPTIONS = [
   { value: 'anthropic', label: 'Anthropic', logo: PROVIDER_META.anthropic.logo },
   { value: 'google', label: 'Google', logo: PROVIDER_META.google.logo },
   { value: 'zen', label: 'Zen', logo: PROVIDER_META.zen.logo },
+  { value: 'meta', label: 'Meta', logo: PROVIDER_META.meta.logo },
   { value: 'ollama', label: 'Ollama', logo: PROVIDER_META.ollama.logo },
   { value: 'vllm', label: 'vLLM', logo: PROVIDER_META.vllm.logo },
   { value: 'lmstudio', label: 'LM Studio', logo: PROVIDER_META.lmstudio.logo },
