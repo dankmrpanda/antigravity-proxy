@@ -19,6 +19,48 @@ const OLD_CERTS_DIR = path.resolve(__dirname, '..', 'certs');
 const OLD_LOGS_DIR = path.resolve(__dirname, '..', 'logs');
 const MIGRATION_MARKER = path.join(USER_DATA_DIR, '.data-migrated');
 
+/**
+ * Best-effort repair for a common macOS/Linux failure mode: the user once ran
+ * the proxy with `sudo` (required for port 443), which created
+ * ~/.antigravity/ owned by root. Subsequent non-sudo runs then fail with
+ * EACCES when writing logs, DB, or certs.
+ *
+ * We detect the case (dir owned by uid 0 while we are non-root) and try to
+ * chown it back via `sudo chown` non-interactively. If that fails (no cached
+ * sudo credentials), we leave the files alone — callers surface a clear hint
+ * telling the user to run `sudo chown -R $(whoami) ~/.antigravity` once.
+ */
+export function ensureUserDataWritable(): { ok: boolean; hint?: string } {
+  try {
+    if (!fs.existsSync(USER_DATA_DIR)) {
+      fs.mkdirSync(USER_DATA_DIR, { recursive: true });
+      return { ok: true };
+    }
+    // Probe writability by touching the dir (no file creation needed).
+    fs.accessSync(USER_DATA_DIR, fs.constants.W_OK);
+    return { ok: true };
+  } catch {
+    // Not writable — likely root-owned after a sudo run.
+    if (process.platform !== 'win32' && typeof process.getuid === 'function') {
+      try {
+        const stat = fs.statSync(USER_DATA_DIR);
+        if (stat.uid === 0 && process.getuid() !== 0) {
+          return {
+            ok: false,
+            hint: `~/.antigravity is owned by root (from a previous sudo run). Fix once with: sudo chown -R $(whoami) ~/.antigravity`,
+          };
+        }
+      } catch { /* fall through */ }
+    }
+    return { ok: false, hint: `Cannot write to ${USER_DATA_DIR}. Check permissions.` };
+  }
+}
+
+export function userDataWriteHint(): string | null {
+  const r = ensureUserDataWritable();
+  return r.ok ? null : (r.hint || null);
+}
+
 export function migrateUserData(): void {
   if (fs.existsSync(MIGRATION_MARKER)) return;
 

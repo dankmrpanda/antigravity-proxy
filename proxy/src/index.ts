@@ -819,8 +819,12 @@ async function main(): Promise<void> {
   });
 
   // TLS server on port 443 (model inference + all other traffic)
-  const certPath = USER_CERT_FILE;
-  const keyPath = USER_KEY_FILE;
+  // Prefer per-user certs (~/.antigravity/certs); fall back to the legacy
+  // repo-local proxy/certs so older installs and CI keep working.
+  const legacyCertPath = path.resolve(__dirname, '..', 'certs', 'cert.pem');
+  const legacyKeyPath = path.resolve(__dirname, '..', 'certs', 'key.pem');
+  const certPath = fs.existsSync(USER_CERT_FILE) ? USER_CERT_FILE : legacyCertPath;
+  const keyPath = fs.existsSync(USER_KEY_FILE) ? USER_KEY_FILE : legacyKeyPath;
 
   if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
     const tlsServer = http2.createSecureServer(
@@ -842,10 +846,11 @@ async function main(): Promise<void> {
     tlsServer.on('sessionError', (err) => logger.debug('TLS session error', { error: err.message }));
     tlsServer.on('error', (err: NodeJS.ErrnoException) => {
       if (err.code === 'EADDRINUSE') {
-        logger.error(`Port ${config.proxyPort} already in use. Kill the old process or set PROXY_PORT in .env`);
+        logger.error(`Port ${config.proxyPort} already in use. Kill the old process (antigravity stop) or set PROXY_PORT in .env`);
       } else if (err.code === 'EACCES') {
-        logger.error(`Port ${config.proxyPort} requires elevated privileges.`);
-        logger.error('  macOS/Linux: run with sudo, or use authbind, or set PROXY_PORT=8443 in .env');
+        logger.error(`Port ${config.proxyPort} requires elevated privileges (ports <1024 are privileged).`);
+        logger.error('  macOS: sudo antigravity start  (or run proxy on 8443 + forward 443→8443 with pfctl, see docs/SETUP.md)');
+        logger.error('  Linux: sudo antigravity start  (or setcap/authbind, or set PROXY_PORT=8443 in .env)');
         logger.error('  Windows: run PowerShell as Administrator');
       } else {
         logger.error('TLS server error', { error: err.message });
@@ -855,7 +860,7 @@ async function main(): Promise<void> {
       logger.info(`Port ${config.proxyPort} (HTTPS) → Intercept: [${Array.from(INTERCEPT_PATHS).join(', ')}]`);
     });
   } else {
-    logger.warn('TLS certs missing — run: node scripts/gen-certs.mjs');
+    logger.warn('TLS certs missing — run: antigravity certs generate (or: node scripts/gen-certs.mjs)');
   }
 
   logger.info(`${config.provider}: ${config.baseUrl}`);

@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { execSync } from 'child_process';
 import { platform } from 'os';
 import { PROXY_DIR } from './paths.js';
@@ -17,6 +18,20 @@ export function generateCerts(): void {
   const scriptPath = path.resolve(PROXY_DIR, 'scripts', 'gen-certs.mjs');
   if (fs.existsSync(scriptPath)) {
     execSync(`node "${scriptPath}"`, { stdio: 'inherit', timeout: 30000 });
+    // gen-certs.mjs writes to both proxy/certs/ (repo/CI) and ~/.antigravity/certs/
+    // (runtime). Older versions only wrote to proxy/certs/, so copy forward
+    // as a fallback in case the script predates the dual-write behavior.
+    try {
+      const legacyCert = path.resolve(PROXY_DIR, 'certs', 'cert.pem');
+      const legacyKey = path.resolve(PROXY_DIR, 'certs', 'key.pem');
+      if (!fs.existsSync(CERT_FILE) && fs.existsSync(legacyCert)) {
+        fs.mkdirSync(USER_CERTS_DIR, { recursive: true });
+        fs.copyFileSync(legacyCert, CERT_FILE);
+        if (fs.existsSync(legacyKey)) fs.copyFileSync(legacyKey, USER_KEY_FILE);
+      }
+    } catch {
+      // Best-effort fallback — certExists() check by the caller will surface errors.
+    }
   } else {
     throw new Error('Certificate generation script not found');
   }
@@ -32,22 +47,52 @@ export function isAdmin(): boolean {
   }
 }
 
-export function isCertTrusted(): boolean {
-  if (platform() !== 'win32' || !certExists()) return false;
+function certFingerprintSha1(): string | null {
   try {
     const lines = fs.readFileSync(CERT_FILE, 'utf-8').split('\n').filter(l => !l.startsWith('-----') && l.trim());
     const b64 = lines.join('');
     const derBytes = Buffer.from(b64, 'base64');
-    const crypto = require('crypto');
-    const sha1 = crypto.createHash('sha1').update(derBytes).digest('hex').toUpperCase();
-    const out = execSync(
-      `powershell -NoProfile -Command "Get-ChildItem Cert:\\LocalMachine\\Root | Where-Object { $_.Thumbprint -eq '${sha1}' } | Measure-Object | Select-Object -ExpandProperty Count"`,
-      { encoding: 'utf-8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }
-    );
-    return out.trim() !== '0';
+    return crypto.createHash('sha1').update(derBytes).digest('hex').toUpperCase();
   } catch {
-    return false;
+    return null;
   }
+}
+
+export function isCertTrusted(): boolean {
+  if (!certExists()) return false;
+  const p = platform();
+  if (p === 'win32') {
+    try {
+      const sha1 = certFingerprintSha1();
+      if (!sha1) return false;
+      const out = execSync(
+        `powershell -NoProfile -Command "Get-ChildItem Cert:\\LocalMachine\\Root | Where-Object { $_.Thumbprint -eq '${sha1}' } | Measure-Object | Select-Object -ExpandProperty Count"`,
+        { encoding: 'utf-8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }
+      );
+      return out.trim() !== '0';
+    } catch {
+      return false;
+    }
+  }
+  if (p === 'darwin') {
+    // macOS: look for our cert in the System keychain by SHA-1 hash.
+    // `security find-certificate -c "localhost"` is too broad (any localhost
+    // cert matches). Matching the fingerprint avoids false positives.
+    try {
+      const sha1 = certFingerprintSha1();
+      if (!sha1) return false;
+      // find-certificate -Z prints SHA-1 hashes; -a dumps all matching certs.
+      const out = execSync(
+        `security find-certificate -a -Z /Library/Keychains/System.keychain`,
+        { encoding: 'utf-8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }
+      );
+      const normalized = out.replace(/[^0-9A-Fa-f]/g, '').toUpperCase();
+      return normalized.includes(sha1);
+    } catch {
+      return false;
+    }
+  }
+  return false;
 }
 
 export function trustCert(): void {
@@ -94,7 +139,7 @@ export function trustCert(): void {
         stdio: 'inherit', timeout: 30000,
       });
     } catch {
-      throw new Error('Failed to add certificate to macOS keychain. Run with sudo.');
+      throw new Error('Failed to add certificate to macOS keychain. Run: sudo antigravity certs trust');
     }
   } else {
     // Linux
@@ -127,6 +172,9 @@ export function cleanHostsFile(): HostsCleanResult {
   const hostsPath = platform() === 'win32'
     ? 'C:\\Windows\\System32\\drivers\\etc\\hosts'
     : '/etc/hosts';
+  const elevateHint = platform() === 'win32'
+    ? 'Run as Administrator.'
+    : 'Run with sudo (e.g. sudo antigravity start).';
 
   try {
     let content = fs.readFileSync(hostsPath, 'utf-8');
@@ -156,7 +204,7 @@ export function cleanHostsFile(): HostsCleanResult {
     fs.writeFileSync(hostsPath, content, 'utf-8');
     return { found: true, cleaned: true };
   } catch {
-    return { found: true, cleaned: false, error: 'Could not modify hosts file. Run as Administrator.' };
+    return { found: true, cleaned: false, error: `Could not modify hosts file. ${elevateHint}` };
   }
 }
 
@@ -164,6 +212,9 @@ export function setupHostsFile(): HostsCleanResult {
   const hostsPath = platform() === 'win32'
     ? 'C:\\Windows\\System32\\drivers\\etc\\hosts'
     : '/etc/hosts';
+  const elevateHint = platform() === 'win32'
+    ? 'Run as Administrator.'
+    : 'Run with sudo (e.g. sudo antigravity start).';
 
   try {
     let content = fs.readFileSync(hostsPath, 'utf-8');
@@ -194,7 +245,7 @@ export function setupHostsFile(): HostsCleanResult {
     fs.writeFileSync(hostsPath, content, 'utf-8');
     return { found: true, cleaned: true };
   } catch {
-    return { found: true, cleaned: false, error: 'Could not modify hosts file. Run as Administrator.' };
+    return { found: true, cleaned: false, error: `Could not modify hosts file. ${elevateHint}` };
   }
 }
 
@@ -203,11 +254,8 @@ export function untrustCert(): void {
   if (certExists()) {
     if (p === 'win32') {
       try {
-        const lines = fs.readFileSync(CERT_FILE, 'utf-8').split('\n').filter(l => !l.startsWith('-----') && l.trim());
-        const b64 = lines.join('');
-        const derBytes = Buffer.from(b64, 'base64');
-        const crypto = require('crypto');
-        const sha1 = crypto.createHash('sha1').update(derBytes).digest('hex').toUpperCase();
+        const sha1 = certFingerprintSha1();
+        if (!sha1) throw new Error('no fingerprint');
 
         execSync(
           `powershell -NoProfile -Command "Get-ChildItem Cert:\\LocalMachine\\Root | Where-Object { $_.Thumbprint -eq '${sha1}' } | Remove-Item"`,

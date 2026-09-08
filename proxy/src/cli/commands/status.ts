@@ -1,4 +1,5 @@
 import { isProxyRunning, getProxyPid } from '../utils/process.js';
+import { config } from '../../config.js';
 import chalk from 'chalk';
 import { section, ok, fail, header, statusBadge, valueBadge, elapsed, startSpinner, succeedSpinner, failSpinner, warnSpinner, error } from '../ui.js';
 
@@ -14,7 +15,7 @@ export async function statusCommand(opts: StatusOptions): Promise<void> {
   if (running) {
     const spinner = startSpinner('Fetching health data');
     try {
-      const res = await fetch('http://localhost:4000/api/health');
+      const res = await fetch(`http://localhost:${config.apiPort}/api/health`);
       if (res.ok) healthData = await res.json();
       succeedSpinner(spinner, 'Health data received');
     } catch {
@@ -39,8 +40,8 @@ export async function statusCommand(opts: StatusOptions): Promise<void> {
       console.log(`  ${valueBadge('Health', healthLabel)}`);
     }
     section('Endpoints');
-    console.log(`  ${valueBadge('Dashboard', 'http://localhost:4000')}`);
-    console.log(`  ${valueBadge('TLS Proxy', 'https://localhost:443')}`);
+    console.log(`  ${valueBadge('Dashboard', `http://localhost:${config.apiPort}`)}`);
+    console.log(`  ${valueBadge('TLS Proxy', `https://localhost:${config.proxyPort}`)}`);
   } else {
     console.log(`  ${valueBadge('Status', 'Stopped')}`);
     console.log('');

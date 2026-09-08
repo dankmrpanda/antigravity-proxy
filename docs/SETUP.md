@@ -119,30 +119,37 @@ The proxy hot-reloads — no restart needed after saving config.
 ## TLS Certificate Trust
 
 The proxy uses a self-signed certificate for port 443. Antigravity needs to trust it.
+Certs live in `~/.antigravity/certs/` (runtime) with a `proxy/certs/` fallback for CI.
 
 ### Windows (automatic)
 `start.ps1` installs the certificate to the Windows Trusted Root store automatically.  
 Manual fallback:
 ```powershell
-certutil -addstore -f Root proxy\certs\cert.pem
+certutil -addstore -f Root $HOME\.antigravity\certs\cert.pem
 ```
 
 ### macOS (automatic with sudo)
 `start.sh` runs:
 ```bash
 sudo security add-trusted-cert -d -r trustRoot \
-  -k /Library/Keychains/System.keychain proxy/certs/cert.pem
+  -k /Library/Keychains/System.keychain ~/.antigravity/certs/cert.pem
 ```
-Manual (via UI): Open **Keychain Access**, drag `proxy/certs/cert.pem` into **System** keychain, double-click → **Always Trust**.
+Manual (via UI): Open **Keychain Access**, drag `~/.antigravity/certs/cert.pem` into **System** keychain, double-click → **Always Trust**.
+
+> Run launchers with `sudo` for port 443, but the proxy, browser, and
+> Antigravity itself always run as your user — `start.sh` handles this via
+> `SUDO_USER`, so your Antigravity login is never touched. The port cleanup
+> only stops processes actually **listening** on 443/8443/4000, never apps
+> with outbound HTTPS connections.
 
 ### Linux (automatic best-effort)
 ```bash
 # Ubuntu / Debian
-sudo cp proxy/certs/cert.pem /usr/local/share/ca-certificates/antigravity-proxy.crt
+sudo cp ~/.antigravity/certs/cert.pem /usr/local/share/ca-certificates/antigravity-proxy.crt
 sudo update-ca-certificates
 
 # Fedora / RHEL
-sudo trust anchor --store proxy/certs/cert.pem
+sudo trust anchor --store ~/.antigravity/certs/cert.pem
 
 # Any distro — Chrome / Chromium only
 # Settings → Privacy → Manage certificates → Authorities → Import cert.pem
@@ -161,7 +168,7 @@ If you set `PROXY_PORT=8443` in `proxy/.env`, Antigravity must also be configure
 | 8443 (alternative) | HTTPS / HTTP2 | Same, but no root required |
 | 4000 (default) | HTTP | Dashboard + REST API |
 
-Change ports in `proxy/.env`:
+Change ports in `~/.antigravity/.env` (active config; `proxy/.env` is migrated there on first run):
 ```env
 PROXY_PORT=8443
 API_PORT=4001
@@ -171,10 +178,10 @@ API_PORT=4001
 
 ## Logs
 
-All proxy logs go to `proxy/logs/` with timestamped filenames:
+All proxy logs go to `~/.antigravity/logs/` with timestamped filenames:
 
 ```
-proxy/logs/proxy_20260531_143000.log
+~/.antigravity/logs/proxy_20260531_143000.log
 ```
 
 Enable debug-level logging:

@@ -1,4 +1,5 @@
 import chalk from 'chalk';
+import { config } from '../../config.js';
 import { header, valueBadge, elapsed, startSpinner, succeedSpinner, failSpinner, error as showError } from '../ui.js';
 
 interface HealthOptions {
@@ -9,7 +10,7 @@ export async function healthCommand(opts: HealthOptions): Promise<void> {
   const spinner = startSpinner('Checking proxy health');
 
   try {
-    const res = await fetch('http://localhost:4000/api/health');
+    const res = await fetch(`http://localhost:${config.apiPort}/api/health`);
     const data = await res.json();
 
     succeedSpinner(spinner, 'Proxy is healthy');

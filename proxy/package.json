@@ -20,7 +20,7 @@
     ".env.example",
     "tsconfig.json"
   ],
-  "postinstall": "node -e \"try{require('./dist/data-paths.js').migrateUserData()}catch{}\"",
+  "postinstall": "node --input-type=module -e \"try{await import('./dist/data-paths.js').then(m=>m.migrateUserData&&m.migrateUserData())}catch{}\"",
   "engines": {
     "node": ">=20"
   },

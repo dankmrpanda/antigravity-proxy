@@ -16,7 +16,12 @@ export function findProcessesOnPort(port: number): number[] {
     } else {
       let out: string;
       try {
-        out = execSync(`lsof -ti tcp:${port}`, { encoding: 'utf-8', timeout: 5000 });
+        // LISTEN-only: without -sTCP:LISTEN, lsof matches every socket with
+        // this port as either endpoint — including outbound HTTPS connections
+        // from browsers, Antigravity, etc. Killing those PIDs kills innocent
+        // apps (and logs the user out of Antigravity). Only listeners (i.e.
+        // a previous proxy instance) may be reaped here.
+        out = execSync(`lsof -ti tcp:${port} -sTCP:LISTEN`, { encoding: 'utf-8', timeout: 5000 });
       } catch {
         out = execSync(`ss -tlnp`, { encoding: 'utf-8', timeout: 5000 });
         for (const line of out.split('\n')) {

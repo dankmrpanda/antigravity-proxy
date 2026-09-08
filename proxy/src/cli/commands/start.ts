@@ -2,11 +2,13 @@ import fs from 'fs';
 import path from 'path';
 import { execSync, spawn, exec } from 'child_process';
 import { platform } from 'os';
-import { certExists, generateCerts, trustCert, cleanHostsFile, setupHostsFile } from '../utils/cert.js';
+import { certExists, generateCerts, trustCert, isCertTrusted, cleanHostsFile, setupHostsFile } from '../utils/cert.js';
 import { killProcessesOnPorts } from '../utils/port.js';
 import { startProxy, isProxyRunning, waitForHealth } from '../utils/process.js';
 import { openUrl } from '../utils/open.js';
 import { PROXY_DIR } from '../utils/paths.js';
+import { USER_CERTS_DIR } from '../../data-paths.js';
+import { ensureUserDataWritable } from '../../data-paths.js';
 import { checkAndPromptUpdate } from '../utils/update-check.js';
 import chalk from 'chalk';
 import { section, ok, fail, warn, info, header, startSpinner, succeedSpinner, failSpinner, warnSpinner, arrow, error } from '../ui.js';
@@ -17,6 +19,23 @@ interface StartOptions {
   foreground?: boolean;
   trustCert?: boolean;
   simple?: boolean;
+}
+
+/**
+ * When running under sudo, GUI apps must be launched as the invoking user —
+ * never as root. A root-launched Electron app creates root-owned profile
+ * data, locking the user out on next normal launch (looks like a logout).
+ */
+function dropToRealUser(cmd: string, args: string[]): { cmd: string; args: string[] } {
+  if (platform() === 'win32') return { cmd, args };
+  try {
+    const sudoUser = process.env.SUDO_USER;
+    const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+    if (isRoot && sudoUser && sudoUser !== 'root') {
+      return { cmd: 'sudo', args: ['-u', sudoUser, cmd, ...args] };
+    }
+  } catch { /* fall through unmodified */ }
+  return { cmd, args };
 }
 
 function launchAntigravityDesktop(): boolean {
@@ -48,7 +67,8 @@ function launchAntigravityDesktop(): boolean {
     }
     if (exePath) {
       try {
-        spawn('open', [exePath], { detached: true, stdio: 'ignore' }).unref();
+        const { cmd, args } = dropToRealUser('open', [exePath]);
+        spawn(cmd, args, { detached: true, stdio: 'ignore' }).unref();
         return true;
       } catch {}
     }
@@ -63,7 +83,8 @@ function launchAntigravityDesktop(): boolean {
     }
     if (exePath) {
       try {
-        spawn(exePath, [], { detached: true, stdio: 'ignore' }).unref();
+        const { cmd, args } = dropToRealUser(exePath, []);
+        spawn(cmd, args, { detached: true, stdio: 'ignore' }).unref();
         return true;
       } catch {}
     }
@@ -72,8 +93,8 @@ function launchAntigravityDesktop(): boolean {
 }
 
 export async function startCommand(opts: StartOptions): Promise<void> {
-  const proxyPort = parseInt(opts.port || '443', 10);
-  const apiPort = 4000;
+  const proxyPort = parseInt(opts.port || process.env.PROXY_PORT || '443', 10);
+  const apiPort = parseInt(process.env.API_PORT || '4000', 10);
 
   header('Antigravity Proxy', `v${JSON.parse(fs.readFileSync(path.join(PROXY_DIR, 'package.json'), 'utf-8')).version}`);
 
@@ -130,11 +151,20 @@ export async function startCommand(opts: StartOptions): Promise<void> {
   }
 
   section('Setting up environment');
+  const dataCheck = ensureUserDataWritable();
+  if (!dataCheck.ok && dataCheck.hint) {
+    console.log(`  ${warn(dataCheck.hint)}`);
+  }
   const depSpinner = startSpinner('Checking dependencies');
   const nodeModules = path.join(PROXY_DIR, 'node_modules');
   if (!fs.existsSync(nodeModules) && !fs.existsSync(path.join(PROXY_DIR, 'dist', 'index.js'))) {
     depSpinner.text = 'Installing dependencies...';
-    execSync('npm install --production', { cwd: PROXY_DIR, stdio: 'pipe', timeout: 120000 });
+    try {
+      execSync('npm install --omit=dev', { cwd: PROXY_DIR, stdio: 'pipe', timeout: 120000 });
+    } catch {
+      // Fallback for old npm (<8) that doesn't support --omit=dev
+      execSync('npm install --production', { cwd: PROXY_DIR, stdio: 'pipe', timeout: 120000 });
+    }
     succeedSpinner(depSpinner, 'Dependencies installed');
   } else {
     succeedSpinner(depSpinner, 'Dependencies ready');
@@ -149,12 +179,15 @@ export async function startCommand(opts: StartOptions): Promise<void> {
   }
 
   const certTrustSpinner = startSpinner('Trusting TLS certificate');
-  const certTrustedMarker = path.join(PROXY_DIR, 'certs', '.trusted');
-  const shouldTrust = opts.trustCert || !fs.existsSync(certTrustedMarker);
+  // Marker lives next to the user certs (not the repo dir) so global npm
+  // installs and source checkouts share the same trust state.
+  const certTrustedMarker = path.join(USER_CERTS_DIR, '.trusted');
+  const alreadyTrusted = isCertTrusted() || fs.existsSync(certTrustedMarker);
+  const shouldTrust = opts.trustCert || !alreadyTrusted;
   if (shouldTrust) {
     try {
       trustCert();
-      fs.writeFileSync(certTrustedMarker, new Date().toISOString());
+      try { fs.writeFileSync(certTrustedMarker, new Date().toISOString()); } catch { /* best-effort */ }
       succeedSpinner(certTrustSpinner, 'Certificate trusted');
     } catch (e: any) {
       warnSpinner(certTrustSpinner, `Certificate not auto-trusted: ${e.message}`);
@@ -177,9 +210,17 @@ export async function startCommand(opts: StartOptions): Promise<void> {
     succeedSpinner(hostsSpinner, 'Proxy routing entries added to hosts file');
   } else if (hostsResult.found && !hostsResult.cleaned) {
     warnSpinner(hostsSpinner, `Could not add routing entries: ${hostsResult.error}`);
-    console.log(`  ${info('Run as Administrator to update hosts file')}`);
+    const elevateMsg = platform() === 'win32'
+      ? 'Run as Administrator to update hosts file'
+      : 'Run with sudo to update hosts file (e.g. sudo antigravity start)';
+    console.log(`  ${info(elevateMsg)}`);
   } else {
     succeedSpinner(hostsSpinner, 'Hosts file already configured');
+  }
+
+  // macOS/Linux privilege hint for port 443 (privileged port <1024)
+  if (platform() !== 'win32' && proxyPort < 1024 && typeof process.getuid === 'function' && process.getuid() !== 0) {
+    console.log(`  ${warn(`Port ${proxyPort} requires root. If bind fails, re-run with sudo or use --port 8443 with a 443→8443 forwarder (see docs/SETUP.md).`)}`);
   }
 
   const envDir = PROXY_DIR;
