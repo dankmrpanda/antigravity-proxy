@@ -1878,6 +1878,7 @@ function attachProviderField(containerId, alias, selected, onChange) {
   const meta = PROVIDER_META[selected] || PROVIDER_META[ALL_PROVIDERS[0]];
   const wrapper = document.createElement('div');
   wrapper.style.cssText = 'position:relative;width:100%';
+  wrapper.className = 'psel-wrap';
   const sel = document.createElement('select');
   sel.style.cssText = 'position:absolute;opacity:0;width:0;height:0;pointer-events:none';
   ALL_PROVIDERS.forEach(p => {
@@ -2262,7 +2263,7 @@ function renderFallbackConfigList() {
 
 function addFallbackModel() {
   const alias = document.getElementById('fallbackModelAlias').value.trim();
-  const provider = document.getElementById('fallbackProviderSelect')?.querySelector('.rsel-value')?.value || '';
+  const provider = document.getElementById('fallbackProviderSelect')?.querySelector('select')?.value || '';
   const model = document.getElementById('fallbackModelName').value.trim();
 
   if (!alias || !provider || !model) {
