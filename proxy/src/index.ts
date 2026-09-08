@@ -3,6 +3,7 @@ import path from 'path';
 import http from 'http';
 import https from 'https';
 import http2 from 'http2';
+import { randomUUID } from 'crypto';
 import { fileURLToPath } from 'url';
 import { config } from './config.js';
 import { logger } from './logger.js';
@@ -21,6 +22,8 @@ import { installAgentContext } from './install-context.js';
 import { USER_CERT_FILE, USER_KEY_FILE } from './data-paths.js';
 import { getWorkspaceContextEnvelope, wrapToolResultForContextFile, isWorkspaceContextFile } from './workspace-context.js';
 import { getSessionId, setSessionId } from './session-store.js';
+import { modelResolver } from './models.js';
+import { findEndpointMismatches } from './opencode-endpoints.js';
 import { safeWrite } from './utils/safe-write.js';
 import { formatErrorResponse } from './utils/error-response.js';
 import { injectContext } from './context-injector.js';
@@ -435,13 +438,21 @@ async function handleStreamGenerate(req: http2.Http2ServerRequest, res: http2.Ht
   const convId = extractConvId(request.requestId);
   injectReasoning(mapped.messages, convId);
 
-  // Inject stored session_id for OpenCode Go context cache discounts
-  const storedSessionId = getSessionId(convId);
-  if (storedSessionId) {
-    if (!mapped.providerOptions) mapped.providerOptions = {};
-    (mapped.providerOptions as any).sessionId = storedSessionId;
+  // OpenCode gateways require a stable x-opencode-session per conversation
+  // (MissingSessionID 400 otherwise). Reuse the stored session id when we
+  // have one; otherwise mint one now so even the FIRST request of a
+  // conversation carries the header. Later responses may return a
+  // server-side session_id which replaces this value for cache discounts.
+  let storedSessionId = getSessionId(convId);
+  if (!storedSessionId) {
+    storedSessionId = randomUUID();
+    setSessionId(convId, storedSessionId);
+    logger.info(`  Session minted: ${storedSessionId.substring(0, 12)}...`);
+  } else {
     logger.info(`  Session cache hit: ${storedSessionId.substring(0, 12)}...`);
   }
+  if (!mapped.providerOptions) mapped.providerOptions = {};
+  (mapped.providerOptions as any).sessionId = storedSessionId;
 
   logger.info(`  Provider priority: ${config.providerPriority.join(', ')}`);
 
@@ -848,6 +859,12 @@ async function main(): Promise<void> {
   }
 
   logger.info(`${config.provider}: ${config.baseUrl}`);
+
+  // Validate gateway mappings against per-model endpoint requirements
+  // (chat/completions vs responses vs messages vs google-native).
+  for (const w of findEndpointMismatches(modelResolver.getProviderMap())) {
+    logger.warn(`[gateway] ${w}`);
+  }
 
   scanLocalProviders().then(async (results) => {
     const online = results.filter(p => p.online);

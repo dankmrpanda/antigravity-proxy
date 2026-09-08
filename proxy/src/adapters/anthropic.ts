@@ -6,12 +6,47 @@ import { parseToolArgs } from '../utils/parse-tool-args.js';
 
 export class AnthropicAdapter implements ModelAdapter {
   provider = 'anthropic';
-  private baseUrl: string;
-  private apiKey: string;
+  protected baseUrl: string;
+  protected apiKey: string;
 
   constructor(baseUrl: string, apiKey: string) {
     this.baseUrl = baseUrl.replace(/\/+$/, '');
     this.apiKey = apiKey;
+  }
+
+  /** Endpoint path — '/messages' for Anthropic and compatible gateways. */
+  protected endpointPath(): string {
+    return '/messages';
+  }
+
+  /** Request headers. Overridden by gateway adapters (Bearer + session). */
+  protected buildHeaders(_config?: Record<string, unknown>): Record<string, string> {
+    return {
+      'Content-Type': 'application/json',
+      'x-api-key': this.apiKey,
+      'anthropic-version': '2023-06-01',
+    };
+  }
+
+  /**
+   * Thinking budget for `thinking: { type: 'enabled', budget_tokens }`.
+   * Returns null when thinking should be off. Overridden by gateway adapters
+   * that always run maximum thinking.
+   */
+  protected thinkingBudget(maxTokens: number, config?: Record<string, unknown>): number | null {
+    const providerOptions = (config as any)?.providerOptions;
+    const reasoningEffort: string | undefined = providerOptions?.openai?.reasoningEffort;
+    if (!reasoningEffort) return null;
+    // Approximate budget_tokens by effort level. Anthropic requires
+    // budget_tokens >= 1024, and <= max_tokens.
+    const budgetByLevel: Record<string, number> = {
+      low: Math.min(2048, maxTokens - 1),
+      medium: Math.min(8192, maxTokens - 1),
+      high: Math.min(16384, maxTokens - 1),
+    };
+    const budget = budgetByLevel[reasoningEffort] ?? Math.min(8192, maxTokens - 1);
+    // Ensure we respect Anthropic's minimum (1024) and stay below max_tokens.
+    return Math.max(1024, budget);
   }
 
   async *stream(
@@ -27,7 +62,7 @@ export class AnthropicAdapter implements ModelAdapter {
       ? [{ role: 'system' as const, content: system }, ...messages]
       : messages;
     const body = this.buildRequest(model, finalMessages, tools, config);
-    const response = await this.fetchResponse(body, signal);
+    const response = await this.fetchResponse(body, signal, config);
 
     const reader = response.body!.getReader();
     const decoder = new TextDecoder();
@@ -100,7 +135,7 @@ export class AnthropicAdapter implements ModelAdapter {
     }
   }
 
-  private buildRequest(
+  protected buildRequest(
     model: string,
     messages: OpenAIMessage[],
     tools?: Record<string, unknown>,
@@ -109,9 +144,10 @@ export class AnthropicAdapter implements ModelAdapter {
     const systemMessages = messages.filter(m => m.role === 'system');
     const nonSystemMessages = messages.filter(m => m.role !== 'system');
 
+    const maxTokens = (config?.maxTokens as number) || 4096;
     const body: Record<string, unknown> = {
       model,
-      max_tokens: (config?.maxTokens as number) || 4096,
+      max_tokens: maxTokens,
       stream: true,
       messages: this.convertMessages(nonSystemMessages),
     };
@@ -125,38 +161,26 @@ export class AnthropicAdapter implements ModelAdapter {
         input_schema: tool.parameters || { type: 'object', properties: {} },
       }));
     }
-    if (config?.temperature != null) body.temperature = config.temperature;
-    if (config?.topP != null) body.top_p = config.topP;
-    if ((config as any)?.stopSequences?.length) body.stop_sequences = (config as any).stopSequences;
 
     // A3: translate OpenAI-style `reasoningEffort` to Anthropic's `thinking`.
     // Antigravity sets providerOptions.openai.reasoningEffort = 'low'|'medium'|'high'
     // when the user wants visible chain-of-thought. Anthropic uses a different
     // shape: `thinking: { type: 'enabled', budget_tokens: N }`.
-    // We only set this when reasoning is requested (avoids changing behavior
-    // for non-reasoning requests).
-    const providerOptions = (config as any)?.providerOptions;
-    const reasoningEffort: string | undefined = providerOptions?.openai?.reasoningEffort;
-    if (reasoningEffort) {
-      // Approximate budget_tokens by effort level. Anthropic requires
-      // budget_tokens >= 1024, and <= max_tokens.
-      const maxTokens = (body.max_tokens as number) || 4096;
-      const budgetByLevel: Record<string, number> = {
-        low: Math.min(2048, maxTokens - 1),
-        medium: Math.min(8192, maxTokens - 1),
-        high: Math.min(16384, maxTokens - 1),
-      };
-      const budget = budgetByLevel[reasoningEffort]
-        ?? Math.min(8192, maxTokens - 1);
-      // Ensure we respect Anthropic's minimum (1024) and stay below max_tokens.
-      const safeBudget = Math.max(1024, budget);
-      (body as any).thinking = { type: 'enabled', budget_tokens: safeBudget };
+    const budget = this.thinkingBudget(maxTokens, config);
+    if (budget != null) {
+      (body as any).thinking = { type: 'enabled', budget_tokens: budget };
+    } else {
+      // Anthropic rejects temperature/top_p alongside thinking — only send
+      // them for non-reasoning requests.
+      if (config?.temperature != null) body.temperature = config.temperature;
+      if (config?.topP != null) body.top_p = config.topP;
     }
+    if ((config as any)?.stopSequences?.length) body.stop_sequences = (config as any).stopSequences;
 
     return body;
   }
 
-  private convertMessages(messages: OpenAIMessage[]): any[] {
+  protected convertMessages(messages: OpenAIMessage[]): any[] {
     const result: any[] = [];
     for (const m of messages) {
       if (m.role === 'tool') {
@@ -202,20 +226,19 @@ export class AnthropicAdapter implements ModelAdapter {
     return result;
   }
 
-  private async fetchResponse(body: Record<string, unknown>, signal?: AbortSignal): Promise<Response> {
-    const response = await poolFetch(`${this.baseUrl}/messages`, {
+  protected async fetchResponse(body: Record<string, unknown>, signal?: AbortSignal, config?: Record<string, unknown>): Promise<Response> {
+    const response = await poolFetch(`${this.baseUrl}${this.endpointPath()}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': this.apiKey,
-        'anthropic-version': '2023-06-01',
-      },
+      headers: this.buildHeaders(config),
       body: JSON.stringify(body),
       signal,
     });
     if (!response.ok) {
       const err = await response.text().catch(() => 'unknown');
-      throw new Error(`[anthropic] API error ${response.status}: ${err}`);
+      logger.debug(`[${this.provider}] rejected body`, {
+        body: JSON.stringify(body).substring(0, 4000),
+      });
+      throw new Error(`[${this.provider}] API error ${response.status}: ${err}`);
     }
     return response;
   }

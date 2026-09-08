@@ -1,15 +1,34 @@
 /**
  * Zen (OpenCode) adapter
  *
- * Optimizations for the OpenCode / Zen API gateway:
- * - Handles OpenCode-specific model routing
- * - OpenCode-specific API headers and URL formatting
- * - Handles reasoning field extraction for routed models
+ * Endpoint-aware routing for the OpenCode Zen gateway: the mapped MODEL is
+ * never switched — instead the request goes to the endpoint that model
+ * requires (see https://opencode.ai/docs/zen/#endpoints):
+ * - /chat/completions — OpenAI-compatible (default)
+ * - /responses       — Responses API (GPT, Grok, Muse Spark)
+ * - /messages        — Anthropic Messages API (Claude, Qwen)
+ * Zen Google-native model endpoints (/v1/models/<id>) are not supported and
+ * fail fast with an actionable error.
+ *
+ * Always runs maximum reasoning effort on every path.
  */
 
 import { OpenAICompatAdapter } from './openai.js';
-import { getEffortForModel } from '../reasoning-effort.js';
+import { randomUUID } from 'crypto';
+import { getZenEndpoint, endpointError, type GatewayEndpoint } from '../opencode-endpoints.js';
+import { GatewayMessagesAdapter } from './gateway-messages.js';
+import { GatewayResponsesAdapter } from './gateway-responses.js';
 import type { OpenAIMessage } from '../mapper.js';
+import type { StreamChunk } from './types.js';
+
+/** Which gateway protocol handles this Zen model. Pure — unit-tested. */
+export function selectZenHandler(model: string): 'chat' | 'responses' | 'messages' | 'google-native' {
+  const endpoint: GatewayEndpoint = getZenEndpoint(model);
+  if (endpoint === 'responses') return 'responses';
+  if (endpoint === 'messages') return 'messages';
+  if (endpoint === 'google-native') return 'google-native';
+  return 'chat';
+}
 
 export class ZenAdapter extends OpenAICompatAdapter {
   constructor(provider: string, baseUrl: string, apiKey: string) {
@@ -17,10 +36,48 @@ export class ZenAdapter extends OpenAICompatAdapter {
   }
 
   /**
-   * Override buildRequest to include OpenCode/Zen specific parameters:
-   * - Reasoning effort via provider-specific parameter name
-   * - Proper model name handling for the gateway
+   * Zen is an OpenCode gateway like Go: send a stable `x-opencode-session`
+   * header per conversation (the gateway answers `MissingSessionID` without
+   * it — including the "free tier can only be used in OpenCode" variant)
+   * plus a distinct User-Agent. Session id flows via
+   * `config.providerOptions.sessionId`; fall back to a generated UUID so the
+   * header is never absent.
    */
+  protected buildHeaders(config?: Record<string, unknown>): Record<string, string> {
+    const sessionId = (config as any)?.providerOptions?.sessionId || randomUUID();
+    return {
+      ...super.buildHeaders(config),
+      'x-opencode-session': String(sessionId),
+      'User-Agent': 'antigravity-proxy/1.0.7',
+    };
+  }
+
+  async *stream(
+    model: string,
+    messages: OpenAIMessage[],
+    tools?: Record<string, unknown>,
+    config?: Record<string, unknown>,
+    signal?: AbortSignal,
+    system?: string,
+  ): AsyncGenerator<StreamChunk> {
+    // Same model, applicable endpoint: only the URL path switches.
+    const handler = selectZenHandler(model);
+    if (handler === 'responses') {
+      const adapter = new GatewayResponsesAdapter(this.baseUrl, this.apiKey, this.provider);
+      yield* adapter.stream(model, messages, tools, config, signal, system);
+      return;
+    }
+    if (handler === 'messages') {
+      const adapter = new GatewayMessagesAdapter(this.baseUrl, this.apiKey, this.provider);
+      yield* adapter.stream(model, messages, tools, config, signal, system);
+      return;
+    }
+    if (handler === 'google-native') {
+      throw endpointError('zen', model, `models/${model}`);
+    }
+    yield* super.stream(model, messages, tools, config, signal, system);
+  }
+
   protected buildRequest(
     model: string,
     messages: OpenAIMessage[],
@@ -44,12 +101,9 @@ export class ZenAdapter extends OpenAICompatAdapter {
     if (config?.topP != null) body.top_p = config.topP;
     if ((config as any)?.stopSequences?.length) body.stop = (config as any).stopSequences;
 
-    // Reasoning effort: check explicit providerOptions first, then per-model config.
-    // Zen/OpenCode gateway forwards reasoning_effort to the underlying model.
-    const explicitEffort = (config as any)?.providerOptions?.openai?.reasoningEffort;
-    const perModelEffort = getEffortForModel(model);
-    const effort = explicitEffort || (perModelEffort && perModelEffort !== 'default' ? perModelEffort : null);
-    if (effort) body.reasoning_effort = effort;
+    // Always maximum reasoning effort, regardless of per-model config.
+    // The Zen gateway forwards reasoning_effort to the underlying model.
+    body.reasoning_effort = 'max';
 
     return body;
   }
