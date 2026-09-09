@@ -1087,7 +1087,7 @@ function buildReqRows(list, page) {
     html += `<tr>
       <td style="font-size:11px;color:var(--text3);white-space:nowrap">${ts}</td>
       <td>${typeTag}${dirTag}</td>
-      <td style="font-size:12px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.resolved_model||r.model)}">${esc(r.model||'—')}</td>
+      <td style="font-size:12px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="alias: ${esc(r.model||'—')}">${esc(r.resolved_model||r.model||'—')}</td>
       <td style="font-size:12px;color:var(--text2)">${tc||'—'}</td>
       <td><span class="td-wrap">${r.content ? esc(r.content.slice(0,90)) : (toolStr||'—')}</span></td>
       <td><button class="btn btn-icon btn-ghost" onclick="toggleDetail('${rid}')" data-tooltip="Details">
