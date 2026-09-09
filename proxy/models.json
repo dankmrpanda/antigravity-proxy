@@ -47,10 +47,10 @@
       "zen": "mimo-v2.5-free"
     },
     "gpt-oss-120b-medium": {
-      "nvidia": [
-        "minimaxai/minimax-m3",
-        "deepseek-v4-pro"
-      ]
+      "meta": "muse-spark-1.3"
+    },
+    "gemini-3.6-flash-low": {
+      "zen": "muse-spark-1.3-contributor-free"
     },
     "gemini-3.5-flash-low": {
       "zen": "deepseek-v4-flash-free"
