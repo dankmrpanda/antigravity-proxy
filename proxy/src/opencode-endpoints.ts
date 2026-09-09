@@ -62,6 +62,9 @@ const ZEN_RESPONSES_MODELS = new Set([
   'gpt-5', 'gpt-5-codex', 'gpt-5-nano',
   'grok-4.6', 'grok-4.5', 'grok-build-0.1',
   'muse-spark-1.3', 'muse-spark-1.2',
+  // Contributor + free-tier variants serve the same protocol.
+  'muse-spark-1.3-contributor', 'muse-spark-1.3-contributor-free',
+  'muse-spark-1.2-contributor', 'muse-spark-1.2-contributor-free',
 ]);
 
 const ZEN_MESSAGES_MODELS = new Set([

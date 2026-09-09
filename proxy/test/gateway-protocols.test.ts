@@ -138,7 +138,7 @@ test('M3: AnthropicAdapter unchanged — no thinking without effort, temp kept',
 // ─── Zen endpoint classification ────────────────────────────────────────
 
 test('Z1: getZenEndpoint classifies Zen models per docs', () => {
-  for (const m of ['gpt-5.6-luna', 'grok-4.6', 'muse-spark-1.3']) assert.equal(getZenEndpoint(m), 'responses', m);
+  for (const m of ['gpt-5.6-luna', 'grok-4.6', 'muse-spark-1.3', 'muse-spark-1.3-contributor', 'muse-spark-1.3-contributor-free']) assert.equal(getZenEndpoint(m), 'responses', m);
   for (const m of ['claude-sonnet-4-6', 'claude-opus-4-5', 'qwen3.7-max']) assert.equal(getZenEndpoint(m), 'messages', m);
   for (const m of ['gemini-3.5-flash', 'gemini-3.1-pro', 'gemini-3-flash']) assert.equal(getZenEndpoint(m), 'google-native', m);
   for (const m of ['mimo-v2.5-free', 'big-pickle', 'deepseek-v4-flash', 'some-future-model']) {
