@@ -1,6 +1,15 @@
 import { execSync } from 'child_process';
 import { platform } from 'os';
 
+function lsofAvailable(): boolean {
+  try {
+    execSync('command -v lsof', { stdio: 'pipe', timeout: 5000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function findProcessesOnPort(port: number): number[] {
   const pids: number[] = [];
   try {
@@ -23,6 +32,11 @@ export function findProcessesOnPort(port: number): number[] {
         // a previous proxy instance) may be reaped here.
         out = execSync(`lsof -ti tcp:${port} -sTCP:LISTEN`, { encoding: 'utf-8', timeout: 5000 });
       } catch {
+        // lsof exits non-zero both when it is missing AND when nothing
+        // listens (no match) — the latter means the port is free, not that
+        // we should fall back. Only use ss when lsof itself is unavailable
+        // (it doesn't exist on macOS, hence the availability check).
+        if (lsofAvailable()) return pids;
         out = execSync(`ss -tlnp`, { encoding: 'utf-8', timeout: 5000 });
         for (const line of out.split('\n')) {
           if (line.includes(`:${port}`)) {

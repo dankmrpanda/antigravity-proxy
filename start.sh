@@ -343,6 +343,16 @@ fi
 
 # Background mode
 if [[ "$EFFECTIVE_PORT" -lt 1024 && $EUID -ne 0 ]]; then
+  # Preflight: the background sudo below cannot prompt for a password, so
+  # validate/cache credentials NOW while we still have the terminal.
+  # Without this, a failed background sudo leaves ports answered by a STALE
+  # instance while start.sh reports success (the health check passes against
+  # the old process and every later step silently targets it).
+  if ! sudo -v; then
+    err "sudo authentication failed — cannot bind privileged port $EFFECTIVE_PORT in background."
+    err "Run 'sudo -v' first, or use ./start.sh --foreground, or ./start.sh --port 8443."
+    exit 1
+  fi
   info "Requesting sudo to bind privileged port $EFFECTIVE_PORT..."
   nohup sudo HOME="$REAL_HOME" "$NODE_BIN" "${ENTRY_ARGS[@]}" > "$LOG_FILE" 2>&1 &
 else
