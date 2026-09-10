@@ -236,19 +236,37 @@ PORTS_TO_CHECK=(443 8443 4000)
 if [[ -n "$PROXY_PORT" ]]; then
   PORTS_TO_CHECK=("${PORTS_TO_CHECK[@]}" "$PROXY_PORT")
 fi
-for PORT in "${PORTS_TO_CHECK[@]}"; do
-  PIDS=""
+# LISTEN sockets only (see NOTE above). Echoes PIDs or nothing.
+pids_on_port() {
+  local port="$1"
   if command -v lsof &>/dev/null; then
-    PIDS=$(lsof -ti tcp:"$PORT" -sTCP:LISTEN 2>/dev/null || true)
+    lsof -ti tcp:"$port" -sTCP:LISTEN 2>/dev/null || true
   elif command -v ss &>/dev/null; then
     # ss output parsing (Linux fallback); -oP not portable so use grep/sed
-    PIDS=$(ss -tlnp 2>/dev/null | grep ":$PORT " | sed -n 's/.*pid=\([0-9]*\).*/\1/p' || true)
+    ss -tlnp 2>/dev/null | grep ":$port " | sed -n 's/.*pid=\([0-9]*\).*/\1/p' || true
   fi
+}
+for PORT in "${PORTS_TO_CHECK[@]}"; do
+  PIDS="$(pids_on_port "$PORT")"
   if [[ -n "${PIDS:-}" ]]; then
     info "Stopping process(es) on port $PORT (PIDs: $PIDS)"
     # shellcheck disable=SC2086
     echo $PIDS | xargs kill -TERM 2>/dev/null || true
     sleep 1
+    # A previous sudo run leaves ROOT-owned listeners that an unprivileged
+    # kill cannot touch (silently). If anything survives, retry elevated —
+    # otherwise the stale instance keeps the ports and shadows the new one.
+    REMAIN="$(pids_on_port "$PORT")"
+    if [[ -n "${REMAIN:-}" && $EUID -ne 0 ]]; then
+      info "Port $PORT still held (root-owned?) — retrying with sudo..."
+      # shellcheck disable=SC2086
+      echo $REMAIN | xargs sudo kill -TERM 2>/dev/null || true
+      sleep 1
+      REMAIN="$(pids_on_port "$PORT")"
+    fi
+    if [[ -n "${REMAIN:-}" ]]; then
+      warn "Port $PORT still held by: $REMAIN — the new proxy may fail to bind."
+    fi
   fi
 done
 ok "Port check complete"
