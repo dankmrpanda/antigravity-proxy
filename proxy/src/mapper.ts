@@ -161,8 +161,43 @@ export function mapContentsToMessages(contents: Content[], systemInstruction?: s
   }
 
   collapseDuplicateToolPairs(messages);
+  traceToolHistory(messages);
 
   return { system: systemInstruction, messages };
+}
+
+/**
+ * Debug trace of tool-call/result linkage per request (LOG_LEVEL=debug).
+ * Compact one-liner per historical pair plus pending (result-less) calls,
+ * with result byte sizes and a short preview. This is how repeat-loop
+ * pathologies get diagnosed: it shows exactly what results the model had
+ * when it chose to re-call.
+ */
+function traceToolHistory(messages: OpenAIMessage[]): void {
+  const parts: string[] = [];
+  let pending = 0;
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
+    if (m.role !== 'assistant' || !m.tool_calls || m.tool_calls.length === 0) continue;
+    const names = m.tool_calls.map((tc) => tc.function.name).join('+');
+    const results: string[] = [];
+    let j = i + 1;
+    while (j < messages.length && messages[j].role === 'tool') {
+      const c = typeof messages[j].content === 'string'
+        ? (messages[j].content as string)
+        : JSON.stringify(messages[j].content ?? '');
+      results.push(`${c.length}b:${JSON.stringify(c.slice(0, 120))}`);
+      j++;
+    }
+    if (results.length === 0) {
+      pending++;
+    } else {
+      parts.push(`${names}<=${results.join(',')}`);
+    }
+  }
+  if (parts.length > 0 || pending > 0) {
+    logger.debug(`[tool-trace] pairs=${parts.length} pending=${pending} ${parts.join(' | ').slice(0, 2000)}`);
+  }
 }
 
 /**
