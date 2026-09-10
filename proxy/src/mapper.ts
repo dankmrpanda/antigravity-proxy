@@ -180,23 +180,24 @@ function traceToolHistory(messages: OpenAIMessage[]): void {
     const m = messages[i];
     if (m.role !== 'assistant' || !m.tool_calls || m.tool_calls.length === 0) continue;
     const names = m.tool_calls.map((tc) => tc.function.name).join('+');
-    const results: string[] = [];
+    const contents: string[] = [];
     let j = i + 1;
     while (j < messages.length && messages[j].role === 'tool') {
-      const c = typeof messages[j].content === 'string'
-        ? (messages[j].content as string)
-        : JSON.stringify(messages[j].content ?? '');
-      results.push(`${c.length}b:${JSON.stringify(c.slice(0, 120))}`);
+      const c = messages[j].content;
+      contents.push(typeof c === 'string' ? c : JSON.stringify(c ?? ''));
       j++;
     }
-    if (results.length === 0) {
+    if (contents.length === 0) {
       pending++;
     } else {
-      parts.push(`${names}<=${results.join(',')}`);
+      // Log full result content (capped): results are small (the failing
+      // list_dir result was 198b) and the tail often names the true cause
+      // (e.g. the IDE-side execution error).
+      parts.push(`${names}<=[${contents.map((c) => `${c.length}b:${JSON.stringify(c.slice(0, 2000))}`).join(',')}]`);
     }
   }
   if (parts.length > 0 || pending > 0) {
-    logger.debug(`[tool-trace] pairs=${parts.length} pending=${pending} ${parts.join(' | ').slice(0, 2000)}`);
+    logger.debug(`[tool-trace] pairs=${parts.length} pending=${pending} ${parts.join(' | ').slice(0, 4000)}`);
   }
 }
 
