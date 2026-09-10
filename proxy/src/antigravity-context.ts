@@ -30,8 +30,10 @@ export const ANTIGRAVITY_CONTEXT = {
 ### File System Tools
 
 \`\`\`
-list_dir(DirectoryPath?: string, AbsolutePath?: string)
+list_dir(DirectoryPath?: string)
   → List files in a directory. Use for discovering project structure.
+  → Use DirectoryPath (the live schema name). AbsolutePath is accepted
+     as an alias but prefer DirectoryPath.
   → NEVER use run_command dir/ls — always use list_dir.
 
 view_file(AbsolutePath?: string)
@@ -217,7 +219,7 @@ call_mcp_tool(ServerName: string, ToolName: string, Arguments?: object)
 | Creating files | Reopen: view_file(AbsolutePath="<path>") |
 | Starting servers | Check status: manage_task(Action="status", TaskId="<id>") |
 | Research | Verify citations: read_url_content(Url="<url>") |
-| Deletion | List directory: list_dir(AbsolutePath="<dir>") |
+| Deletion | List directory: list_dir(DirectoryPath="<dir>") |
 
 **Completion without validation is FAILURE.**
 

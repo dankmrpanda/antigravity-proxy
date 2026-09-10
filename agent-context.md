@@ -10,7 +10,7 @@
 
 | Category | Tool | Required Params | NEVER Use Instead | Correct Example |
 |----------|------|----------------|-------------------|-----------------|
-| **File List** | `list_dir` | `AbsolutePath` or `DirectoryPath` | `run_command dir/ls` | `list_dir(AbsolutePath="src/")` |
+| **File List** | `list_dir` | `AbsolutePath` or `DirectoryPath` | `run_command dir/ls` | `list_dir(DirectoryPath="src/")` |
 | **File Read** | `view_file` | `AbsolutePath` | `run_command cat/type` | `view_file(AbsolutePath="package.json")` |
 | **File Search** | `grep_search` | `SearchPath`, `Query` | `run_command grep/findstr` | `grep_search(SearchPath="src/", Query="function")` |
 | **File Write** | `write_to_file` | `TargetFile`, `CodeContent`, `Overwrite` | `run_command echo >` | `write_to_file(TargetFile="out.txt", CodeContent="hi", Overwrite=false)` |
@@ -205,7 +205,7 @@ Confidence < 60%     → Ask user for clarification
 
 | Tool | Required Parameters | Common Mistake | Correct Usage |
 |------|-------------------|----------------|---------------|
-| `list_dir` | `DirectoryPath` or `AbsolutePath` | Using `run_command` | `list_dir(AbsolutePath="<path>")` |
+| `list_dir` | `DirectoryPath` or `AbsolutePath` | Using `run_command` | `list_dir(DirectoryPath="<path>")` |
 | `view_file` | `AbsolutePath` | Using `run_command cat/type` | `view_file(AbsolutePath="<path>")` |
 | `grep_search` | `SearchPath`, `Query` (or `Includes` glob array) | Using `run_command grep/findstr` | `grep_search(SearchPath="<path>", Query="<pattern>")` |
 | `write_to_file` | `TargetFile`, `CodeContent`, `Overwrite` | Omitting `Overwrite` param | Always set `Overwrite: true/false` |
@@ -452,8 +452,8 @@ After ANY modification, you MUST verify it worked. Use the table below to determ
 | **Starting servers** | Check status using manage_task | `manage_task(Action="status", TaskId="<id>")` |
 | **Research** | Verify citations by reading sources | `read_url_content(Url="<url>")` |
 | **Browser actions** | Inspect page state after action | `browser_action(Action="screenshot")` or `browser_action(Action="get_text")` |
-| **Deletion** | List directory to confirm removal | `list_dir(AbsolutePath="<dir>")` |
-| **File operations** | List directory to confirm creation/removal | `list_dir(AbsolutePath="<dir>")` |
+| **Deletion** | List directory to confirm removal | `list_dir(DirectoryPath="<dir>")` |
+| **File operations** | List directory to confirm creation/removal | `list_dir(DirectoryPath="<dir>")` |
 | **Configuration changes** | Re-read the config file | `view_file(AbsolutePath="<path>")` |
 
 ### Verification Sequence
@@ -515,7 +515,7 @@ If ANY box is unchecked, the task is NOT complete.
 Before ANY task, you must:
 
 1. **List the workspace root**
-   `list_dir(AbsolutePath="<workspace_root>")`
+   `list_dir(DirectoryPath="<workspace_root>")`
 
 2. **Identify key project files**
    Look for: README, package.json, setup.py, Makefile, build files
@@ -708,7 +708,7 @@ write_to_file(
 
 ```
 1. DISCOVER
-   list_dir(AbsolutePath="<workspace>")
+   list_dir(DirectoryPath="<workspace>")
    view_file(AbsolutePath="README.md")  → Understand project
 
 2. PLAN (if complex)
@@ -785,7 +785,7 @@ write_to_file(
 ```
 1. MAP
    grep_search(SearchPath="src/", Query="<function-name>")  → Find all usages
-   list_dir(AbsolutePath="src/")                             → See structure
+   list_dir(DirectoryPath="src/")                             → See structure
 
 2. UNDERSTAND
    view_file(AbsolutePath="src/old-implementation.ts")       → Read current

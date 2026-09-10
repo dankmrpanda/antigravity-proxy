@@ -160,7 +160,64 @@ export function mapContentsToMessages(contents: Content[], systemInstruction?: s
     }
   }
 
+  collapseDuplicateToolPairs(messages);
+
   return { system: systemInstruction, messages };
+}
+
+/**
+ * Loop-guard: collapse exact-duplicate historical tool call/result pairs.
+ *
+ * When a model gets stuck re-issuing an identical call, every identical
+ * pair appended to history reinforces the pattern — the model sees "call X,
+ * got Y" ten times and pattern-continues with an eleventh identical call
+ * instead of using the result it already has (verified live: 0-4 prior
+ * pairs proceed fine, 10 identical pairs loop forever).
+ *
+ * A pair is collapsible only when call AND result match an earlier pair
+ * exactly (same tool name, same args, same result content). The first
+ * occurrence is always kept, so no information is lost: a retry after a
+ * *different* result is new information and is preserved.
+ */
+function collapseDuplicateToolPairs(messages: OpenAIMessage[]): void {
+  // Group each assistant tool-call message with its immediately following
+  // consecutive tool-result messages.
+  interface Pair { callIdx: number; resultIdx: number[]; key: string }
+  const pairs: Pair[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
+    if (m.role !== 'assistant' || !m.tool_calls || m.tool_calls.length === 0) continue;
+    const resultIdx: number[] = [];
+    let j = i + 1;
+    while (j < messages.length && messages[j].role === 'tool') {
+      resultIdx.push(j);
+      j++;
+    }
+    // Only collapsible when the call actually has its result present.
+    if (resultIdx.length === 0) continue;
+    const key = JSON.stringify({
+      calls: m.tool_calls.map((tc) => ({ name: tc.function.name, args: tc.function.arguments })),
+      results: resultIdx.map((k) => messages[k].content),
+    });
+    pairs.push({ callIdx: i, resultIdx, key });
+  }
+
+  const seen = new Set<string>();
+  const drop = new Set<number>();
+  for (const p of pairs) {
+    if (seen.has(p.key)) {
+      drop.add(p.callIdx);
+      for (const k of p.resultIdx) drop.add(k);
+    } else {
+      seen.add(p.key);
+    }
+  }
+  if (drop.size === 0) return;
+
+  const kept = messages.filter((_, idx) => !drop.has(idx));
+  messages.length = 0;
+  messages.push(...kept);
+  logger.info(`[loop-guard] collapsed ${drop.size} duplicate history messages (identical call+result repeats)`);
 }
 
 export function mapExternalMessagesToCore(messages: any[]): MappedRequest {

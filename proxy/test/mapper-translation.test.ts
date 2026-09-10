@@ -173,4 +173,39 @@ describe('mapGenerationConfig', () => {
     assert.equal(result.maxTokens, undefined);
     assert.equal(result.temperature, undefined);
   });
+
+  it('should collapse exact-duplicate historical tool call/result pairs (loop-guard)', () => {
+    const pair = () => ([
+      { role: 'model', parts: [{ functionCall: { name: 'list_dir', args: { DirectoryPath: '/tmp' } } }] },
+      { role: 'user', parts: [{ functionResponse: { name: 'list_dir', response: { files: ['a.txt'] } } }] },
+    ]);
+    const contents = [
+      { role: 'user', parts: [{ text: 'scan' }] },
+      ...pair(), ...pair(), ...pair(),
+      { role: 'user', parts: [{ text: 'continue' }] },
+    ];
+
+    const result = mapContentsToMessages(contents as any);
+
+    const toolMsgs = result.messages.filter((m) => m.role === 'tool');
+    assert.equal(toolMsgs.length, 1, 'three identical pairs must collapse to one');
+    assert.ok(JSON.stringify(toolMsgs[0].content).includes('a.txt'), 'kept pair retains the result');
+    assert.equal(result.messages[0].content, 'scan');
+    assert.equal(result.messages[result.messages.length - 1].content, 'continue');
+  });
+
+  it('should preserve retries whose results differ', () => {
+    const contents = [
+      { role: 'user', parts: [{ text: 'scan' }] },
+      { role: 'model', parts: [{ functionCall: { name: 'list_dir', args: { DirectoryPath: '/tmp' } } }] },
+      { role: 'user', parts: [{ functionResponse: { name: 'list_dir', response: { files: ['a.txt'] } } }] },
+      { role: 'model', parts: [{ functionCall: { name: 'list_dir', args: { DirectoryPath: '/tmp' } } }] },
+      { role: 'user', parts: [{ functionResponse: { name: 'list_dir', response: { files: ['a.txt', 'b.txt'] } } }] },
+    ];
+
+    const result = mapContentsToMessages(contents as any);
+
+    const toolMsgs = result.messages.filter((m) => m.role === 'tool');
+    assert.equal(toolMsgs.length, 2, 'pairs with different results carry new information and must be kept');
+  });
 });

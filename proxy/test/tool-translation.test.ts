@@ -659,3 +659,27 @@ test('T3: replace_file_content fills AllowMultiple default', () => {
   });
   assert.equal(r.args.AllowMultiple, false, 'should fill AllowMultiple with default false');
 });
+
+test('T2: normalizeToolCall maps AbsolutePath → DirectoryPath for dynamic list_dir (loop-guard)', () => {
+  // Live IDE schema declares only DirectoryPath, but our injected docs and
+  // model training teach AbsolutePath. Stripping it emptied the call and the
+  // model retried identically forever — must map, not strip.
+  toolCapabilityRegistry.setDynamicTools({
+    list_dir: {
+      description: 'List files',
+      parameters: {
+        type: 'object',
+        properties: { DirectoryPath: { type: 'string', description: 'dir' } },
+        required: ['DirectoryPath'],
+      },
+    },
+  });
+  try {
+    const result = normalizeToolCall('list_dir', { AbsolutePath: '/tmp' });
+    assert.equal(result.args.DirectoryPath, '/tmp', 'AbsolutePath must map to DirectoryPath');
+    assert.equal((result.args as any).AbsolutePath, undefined, 'must not keep the undeclared name');
+    assert.ok(!(result.warnings || []).some((w) => w.includes('stripped')), 'must not strip a good path');
+  } finally {
+    toolCapabilityRegistry.setDynamicTools(null);
+  }
+});

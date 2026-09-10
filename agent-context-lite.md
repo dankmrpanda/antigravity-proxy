@@ -7,7 +7,7 @@
 
 | Category | Tool | Required Params | NEVER Use Instead | Correct Example |
 |----------|------|----------------|-------------------|-----------------|
-| **File List** | `list_dir` | `AbsolutePath` or `DirectoryPath` | `run_command dir/ls` | `list_dir(AbsolutePath="src/")` |
+| **File List** | `list_dir` | `AbsolutePath` or `DirectoryPath` | `run_command dir/ls` | `list_dir(DirectoryPath="src/")` |
 | **File Read** | `view_file` | `AbsolutePath` | `run_command cat/type` | `view_file(AbsolutePath="package.json")` |
 | **File Search** | `grep_search` | `SearchPath`, `Query` | `run_command grep/findstr` | `grep_search(SearchPath="src/", Query="function")` |
 | **File Write** | `write_to_file` | `TargetFile`, `CodeContent`, `Overwrite` | `run_command echo >` | `write_to_file(TargetFile="out.txt", CodeContent="hi", Overwrite=false)` |
@@ -101,7 +101,7 @@ Confidence < 60%  → Ask user for clarification
 
 | Tool | Required Parameters | Common Mistake | Correct Usage |
 |------|-------------------|----------------|---------------|
-| `list_dir` | `DirectoryPath` or `AbsolutePath` | Using `run_command` | `list_dir(AbsolutePath="<path>")` |
+| `list_dir` | `DirectoryPath` or `AbsolutePath` | Using `run_command` | `list_dir(DirectoryPath="<path>")` |
 | `view_file` | `AbsolutePath` | Using `run_command cat/type` | `view_file(AbsolutePath="<path>")` |
 | `grep_search` | `SearchPath`, `Query` | Using `run_command grep/findstr` | `grep_search(SearchPath="<path>", Query="<pattern>")` |
 | `write_to_file` | `TargetFile`, `CodeContent`, `Overwrite` | Omitting `Overwrite` param | Always set `Overwrite: true/false` |
@@ -205,7 +205,7 @@ Spawn when ANY:
 | Creating files | Reopen: `view_file(AbsolutePath="<path>")` |
 | Starting servers | Check status: `manage_task(Action="status", TaskId)` |
 | Research | Verify citations: `read_url_content(Url="<url>")` |
-| Deletion | List directory: `list_dir(AbsolutePath="<dir>")` |
+| Deletion | List directory: `list_dir(DirectoryPath="<dir>")` |
 
 **Completion without validation is FAILURE.**
 

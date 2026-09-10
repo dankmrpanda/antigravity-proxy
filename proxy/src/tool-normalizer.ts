@@ -126,6 +126,25 @@ function resolveParamName(toolName: string, paramName: string): string {
     for (const [canonical] of Object.entries(schema.params)) {
       if (canonical.toLowerCase() === lower) return canonical;
     }
+    // Static-knowledge fallback: the live schema may declare only a subset
+    // of names (e.g. the IDE declares DirectoryPath while our injected docs
+    // and model training teach AbsolutePath). If the static well-known def
+    // resolves the emitted name AND the dynamic schema accepts that
+    // canonical, adopt it instead of stripping a good value (stripping
+    // caused infinite model retry loops — the model re-emits what it was
+    // taught while the proxy deletes it every turn).
+    const staticSchema = toolCapabilityRegistry.getWellKnownSchema(toolName);
+    if (staticSchema) {
+      for (const [staticCanonical, def] of Object.entries(staticSchema.params)) {
+        const hit =
+          staticCanonical.toLowerCase() === lower ||
+          (def.aliases || []).some((a: string) => a.toLowerCase() === lower);
+        if (!hit) continue;
+        for (const [dynKey] of Object.entries(schema.params)) {
+          if (dynKey.toLowerCase() === staticCanonical.toLowerCase()) return dynKey;
+        }
+      }
+    }
     return paramName;
   }
 

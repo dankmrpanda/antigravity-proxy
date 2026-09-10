@@ -191,7 +191,11 @@ const WELL_KNOWN_TOOLS: ToolSchema[] = [
         type: 'string',
         required: false,
         description: 'Directory path to list (alternative name)',
-        aliases: ['dir', 'directory', 'Dir', 'folder'],
+        // AbsolutePath is what our injected context docs and model training
+        // teach; the live IDE schema declares DirectoryPath. The normalizer
+        // uses this equivalence to map one to the other instead of stripping
+        // a perfectly good path (which caused infinite retry loops).
+        aliases: ['dir', 'directory', 'Dir', 'folder', 'AbsolutePath', 'absolute_path', 'path'],
       },
     },
   },
@@ -692,6 +696,24 @@ export class ToolCapabilityRegistry {
   hasTool(name: string): boolean {
     const canonical = this.resolveName(name);
     return this.wellKnown.has(canonical) || this.dynamicTools.has(canonical);
+  }
+
+  /**
+   * Get the STATIC well-known schema for a tool, ignoring per-request
+   * dynamic tools. Used by the normalizer as a fallback knowledge source:
+   * the live (dynamic) schema may declare only a subset of names (e.g. the
+   * IDE declares DirectoryPath while docs/training teach AbsolutePath).
+   * Returns undefined for unknown tools.
+   */
+  getWellKnownSchema(name: string): ToolSchema | undefined {
+    const lower = name.toLowerCase().trim();
+    for (const [canonical, def] of this.wellKnown) {
+      if (canonical.toLowerCase() === lower) return def;
+    }
+    if (this.aliasMap.has(lower)) {
+      return this.wellKnown.get(this.aliasMap.get(lower)!);
+    }
+    return undefined;
   }
 
   /**
