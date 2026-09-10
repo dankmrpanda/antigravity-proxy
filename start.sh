@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Antigravity Proxy — macOS / Linux launcher
 #
-# Usage: ./start.sh [--port 8443] [--foreground]
+# Usage: ./start.sh [--port 8443] [--background]
 # Requires: Node.js 20+, npm
+# Runs attached by default: logs to the terminal, Ctrl+C stops everything.
+# Use --background to detach (logs to a file instead).
 # Port 443 requires root/sudo. Use --port 8443 + pfctl forwarding to avoid
 # running the whole proxy as root (see "Port forwarding" section below).
 set -euo pipefail
@@ -44,15 +46,17 @@ step()  { echo; echo "==> $*"; }
 
 # ── Parse args ────────────────────────────────────────────────────────────────
 PROXY_PORT=""
-FOREGROUND=0
+BACKGROUND=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --port|-p) PROXY_PORT="$2"; shift 2 ;;
-    --foreground|-f) FOREGROUND=1; shift ;;
+    --background|-b) BACKGROUND=1; shift ;;
+    --foreground|-f) BACKGROUND=0; shift ;; # accepted for compat; foreground is the default
     --help|-h)
-      echo "Usage: ./start.sh [--port 8443] [--foreground]"
+      echo "Usage: ./start.sh [--port 8443] [--background]"
       echo "  --port 8443     Use high port (no sudo needed for bind; requires 443→8443 forwarding for intercept)"
-      echo "  --foreground    Run in foreground (logs to terminal, Ctrl+C to stop)"
+      echo "  --background    Detach into the background (logs to a file). Default is attached:"
+      echo "                  logs to the terminal, Ctrl+C stops the proxy."
       exit 0 ;;
     *) shift ;;
   esac
@@ -329,8 +333,21 @@ if [[ "$USE_TSX" -eq 1 && ! -d "$PROXY_DIR/node_modules/tsx" && ! -d "$PROXY_DIR
   npm install 2>/dev/null || true
 fi
 
-if [[ "$FOREGROUND" -eq 1 ]]; then
-  info "Running in foreground (Ctrl+C to stop)..."
+# ── Attached mode (default): proxy replaces this shell ──────────────────────
+# Logs stream to the terminal; Ctrl+C (or closing the terminal) stops the
+# proxy with it. Browser + Antigravity are opened via a short delayed
+# one-shot so they launch once the proxy is up.
+if [[ "$BACKGROUND" -eq 0 ]]; then
+  info "Running attached (Ctrl+C to stop)..."
+  API_PORT_HINT=$(grep -E "^API_PORT=" "$PROXY_DIR/.env" 2>/dev/null | cut -d= -f2 | cut -d'#' -f1 | tr -d '[:space:]' || echo "4000")
+  API_PORT_HINT="${API_PORT_HINT:-4000}"
+  (sleep 6
+   if [[ "$OS" == "Darwin" ]]; then
+     as_user open "http://localhost:${API_PORT_HINT}" 2>/dev/null || true
+     [[ -d "/Applications/Antigravity.app" ]] && as_user open "/Applications/Antigravity.app" 2>/dev/null || true
+   elif command -v xdg-open &>/dev/null; then
+     as_user xdg-open "http://localhost:${API_PORT_HINT}" 2>/dev/null || true
+   fi) & disown 2>/dev/null || true
   if [[ "$EFFECTIVE_PORT" -lt 1024 && $EUID -ne 0 ]]; then
     info "Requesting sudo for privileged port $EFFECTIVE_PORT..."
     exec sudo HOME="$REAL_HOME" "$NODE_BIN" "${ENTRY_ARGS[@]}"
@@ -341,7 +358,7 @@ if [[ "$FOREGROUND" -eq 1 ]]; then
   fi
 fi
 
-# Background mode
+# Background mode (opt-in via --background)
 if [[ "$EFFECTIVE_PORT" -lt 1024 && $EUID -ne 0 ]]; then
   # Preflight: the background sudo below cannot prompt for a password, so
   # validate/cache credentials NOW while we still have the terminal.
@@ -350,7 +367,7 @@ if [[ "$EFFECTIVE_PORT" -lt 1024 && $EUID -ne 0 ]]; then
   # the old process and every later step silently targets it).
   if ! sudo -v; then
     err "sudo authentication failed — cannot bind privileged port $EFFECTIVE_PORT in background."
-    err "Run 'sudo -v' first, or use ./start.sh --foreground, or ./start.sh --port 8443."
+    err "Run 'sudo -v' first, run attached (default, sudo prompts inline), or use ./start.sh --port 8443."
     exit 1
   fi
   info "Requesting sudo to bind privileged port $EFFECTIVE_PORT..."
@@ -433,7 +450,7 @@ info "  Log file:   $LOG_FILE"
 info "  User data:  $USER_DATA_DIR (owned by $REAL_USER)"
 info ""
 info "  Configure providers and API keys from the dashboard Config tab."
-info "  To stop: kill $PROXY_PID  (or Ctrl+C if you run in foreground)"
+info "  To stop: kill $PROXY_PID  (attached mode instead: just Ctrl+C)"
 info ""
-info "  To run in foreground instead of background:"
-info "    ./start.sh --foreground"
+info "  To run attached instead of detached (logs to terminal):"
+info "    ./start.sh   (this is the default; --background detaches)"
