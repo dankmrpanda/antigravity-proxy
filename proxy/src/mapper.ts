@@ -166,18 +166,20 @@ export function mapContentsToMessages(contents: Content[], systemInstruction?: s
 }
 
 /**
- * Loop-guard: collapse exact-duplicate historical tool call/result pairs.
+ * Loop-guard: collapse repeated historical tool call/result pairs.
  *
- * When a model gets stuck re-issuing an identical call, every identical
- * pair appended to history reinforces the pattern — the model sees "call X,
- * got Y" ten times and pattern-continues with an eleventh identical call
- * instead of using the result it already has (verified live: 0-4 prior
- * pairs proceed fine, 10 identical pairs loop forever).
+ * When a model gets stuck re-issuing an identical call, every repeat
+ * appended to history reinforces the pattern — the model sees "call X,
+ * got Y" ten times and pattern-continues with another identical call
+ * instead of using the results it already has (verified live: short
+ * histories proceed fine, long repetitive ones loop forever).
  *
- * A pair is collapsible only when call AND result match an earlier pair
- * exactly (same tool name, same args, same result content). The first
- * occurrence is always kept, so no information is lost: a retry after a
- * *different* result is new information and is preserved.
+ * Repeats are grouped by call identity (tool name + args) alone: live
+ * traffic showed the guard never firing on exact call+result matches
+ * because results carry volatile per-turn fields. Within a group of 3+
+ * identical calls, only the FIRST and LAST pair are kept — the middle
+ * repeats add no information (a retry after genuinely different output
+ * still leaves the newest result in place). Groups of 1-2 are untouched.
  */
 function collapseDuplicateToolPairs(messages: OpenAIMessage[]): void {
   // Group each assistant tool-call message with its immediately following
@@ -194,22 +196,28 @@ function collapseDuplicateToolPairs(messages: OpenAIMessage[]): void {
       j++;
     }
     // Only collapsible when the call actually has its result present.
+    // In-flight (pending) calls are never touched.
     if (resultIdx.length === 0) continue;
-    const key = JSON.stringify({
-      calls: m.tool_calls.map((tc) => ({ name: tc.function.name, args: tc.function.arguments })),
-      results: resultIdx.map((k) => messages[k].content),
-    });
+    const key = JSON.stringify(
+      m.tool_calls.map((tc) => ({ name: tc.function.name, args: tc.function.arguments })),
+    );
     pairs.push({ callIdx: i, resultIdx, key });
   }
 
-  const seen = new Set<string>();
-  const drop = new Set<number>();
+  const groups = new Map<string, Pair[]>();
   for (const p of pairs) {
-    if (seen.has(p.key)) {
-      drop.add(p.callIdx);
-      for (const k of p.resultIdx) drop.add(k);
-    } else {
-      seen.add(p.key);
+    const g = groups.get(p.key) || [];
+    g.push(p);
+    groups.set(p.key, g);
+  }
+
+  const drop = new Set<number>();
+  for (const g of groups.values()) {
+    if (g.length < 3) continue;
+    // Keep first and last; drop the middle repeats.
+    for (let k = 1; k < g.length - 1; k++) {
+      drop.add(g[k].callIdx);
+      for (const r of g[k].resultIdx) drop.add(r);
     }
   }
   if (drop.size === 0) return;
@@ -217,7 +225,7 @@ function collapseDuplicateToolPairs(messages: OpenAIMessage[]): void {
   const kept = messages.filter((_, idx) => !drop.has(idx));
   messages.length = 0;
   messages.push(...kept);
-  logger.info(`[loop-guard] collapsed ${drop.size} duplicate history messages (identical call+result repeats)`);
+  logger.info(`[loop-guard] collapsed ${drop.size} duplicate history messages (repeated identical tool calls)`);
 }
 
 export function mapExternalMessagesToCore(messages: any[]): MappedRequest {
