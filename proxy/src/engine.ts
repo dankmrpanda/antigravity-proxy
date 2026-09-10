@@ -119,22 +119,17 @@ export function reloadRouter(): void {
 /**
  * Normalize a tool call from an external LLM.
  * Uses the ToolNormalizer to fix names, params, types, and defaults.
- * Falls back to simple internal-param stripping if normalizer doesn't apply.
+ *
+ * NOTE: toolAction/toolSummary/ToolAction/ToolSummary MUST be passed
+ * through untouched. They look like runtime-only envelope fields, but live
+ * traffic proved the IDE validates their presence on every call
+ * ("missing properties 'toolSummary', 'toolAction'") and nothing
+ * re-injects them — stripping caused an infinite identical-retry loop.
  */
-const ANTIGRAVITY_INTERNAL_ONLY = new Set([
-  'toolAction', 'toolSummary', 'ToolAction', 'ToolSummary',
-]);
-
 function normalizeToolArgs(args: Record<string, unknown>, toolName: string): Record<string, unknown> {
-  // First: strip Antigravity internal params (these are injected by the runtime)
-  const cleaned: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(args)) {
-    if (!ANTIGRAVITY_INTERNAL_ONLY.has(key)) cleaned[key] = value;
-  }
-  if (Object.keys(cleaned).length === 0) return args;
+  if (!args || Object.keys(args).length === 0) return args;
 
-  // Second: run through the tool normalizer for schema-aware fixes
-  const result = normalizeToolCall(toolName, cleaned);
+  const result = normalizeToolCall(toolName, args);
   if (result.warnings) {
     logger.info(`[normalizer] ${result.warnings.join('; ')}`);
   }

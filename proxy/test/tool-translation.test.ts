@@ -683,3 +683,36 @@ test('T2: normalizeToolCall maps AbsolutePath → DirectoryPath for dynamic list
     toolCapabilityRegistry.setDynamicTools(null);
   }
 });
+
+test('T2: normalizeToolCall preserves toolAction/toolSummary (IDE requires them)', () => {
+  // Live traffic proved the IDE rejects calls missing these envelope
+  // params ("missing properties 'toolSummary', 'toolAction'") and nothing
+  // re-injects them — stripping caused an infinite identical-retry loop.
+  toolCapabilityRegistry.setDynamicTools({
+    list_dir: {
+      description: 'List files',
+      parameters: {
+        type: 'object',
+        properties: {
+          DirectoryPath: { type: 'string' },
+          toolSummary: { type: 'string' },
+          toolAction: { type: 'string' },
+        },
+        required: ['DirectoryPath', 'toolSummary', 'toolAction'],
+      },
+    },
+  });
+  try {
+    const result = normalizeToolCall('list_dir', {
+      DirectoryPath: '/tmp',
+      toolSummary: 'List /tmp',
+      toolAction: 'list',
+    });
+    assert.equal(result.args.DirectoryPath, '/tmp');
+    assert.equal(result.args.toolSummary, 'List /tmp', 'toolSummary must survive normalization');
+    assert.equal(result.args.toolAction, 'list', 'toolAction must survive normalization');
+    assert.ok(!(result.warnings || []).some((w) => w.includes('stripped')));
+  } finally {
+    toolCapabilityRegistry.setDynamicTools(null);
+  }
+});
