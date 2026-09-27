@@ -165,6 +165,7 @@ function createAdapterForType(type: 'openai' | 'anthropic' | 'google', cfg: Prov
 function buildPlugin(def: ProviderDef): IProviderPlugin {
   const capabilities: ProviderCapabilities = {
     ...DEFAULT_CAPABILITIES,
+    authMethod: def.envKey ? 'header' : 'none',
     label: def.name,
     ...(def.capabilities || {}),
   };

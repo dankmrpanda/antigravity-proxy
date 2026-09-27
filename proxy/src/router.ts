@@ -1,7 +1,8 @@
 import { logger } from './logger.js';
 import { config } from './config.js';
 import type { ProviderConfig, ProviderId } from './adapter.js';
-import { createAdapter } from './adapter.js';
+import { createAdapter, DEFAULT_PROVIDER_CONFIGS } from './adapter.js';
+import { providerRegistry } from './provider-registry.js';
 import type { ModelAdapter, StreamChunk } from './adapters/types.js';
 import type { OpenAIMessage } from './mapper.js';
 import type { ModelResolver } from './models.js';
@@ -60,6 +61,14 @@ export class Router {
   private addProviders(providers: ProviderConfig[]): void {
     for (const cfg of providers) {
       if (cfg.enabled) {
+        const capabilities = providerRegistry.getCapabilities(cfg.id);
+        const requiresKey = capabilities
+          ? capabilities.authMethod !== 'none'
+          : Boolean(DEFAULT_PROVIDER_CONFIGS[cfg.id]?.envKey);
+        if (requiresKey && !cfg.apiKey?.trim()) {
+          logger.warn(`[router] Skipping ${cfg.id}: no API key configured`);
+          continue;
+        }
         this.adapters.set(cfg.id, createAdapter(cfg));
       }
     }
