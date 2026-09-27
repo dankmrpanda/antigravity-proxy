@@ -167,6 +167,86 @@ export function mapContentsToMessages(contents: Content[], systemInstruction?: s
 }
 
 /**
+ * Sanitize tool-call/result pairing so strict providers (OpenAI Responses
+ * `function_call_output.call_id`, chat/completions `tool_call_id`) never see
+ * an orphan.
+ *
+ * Match each assistant batch only to its immediately following results.
+ * Preserve answered calls, demote orphan/duplicate results to text, and
+ * describe unanswered calls as text. Even a final unanswered historical
+ * call is invalid when sent back to strict chat providers for generation.
+ * Returns a new history without mutating the caller's messages.
+ */
+export function sanitizeToolPairs(messages: OpenAIMessage[]): OpenAIMessage[] {
+  if (!messages || messages.length === 0) return messages;
+
+  const out: OpenAIMessage[] = [];
+  const usedIds = new Set<string>();
+  const demoteResult = (message: OpenAIMessage): OpenAIMessage => {
+    const content = typeof message.content === 'string'
+      ? message.content : JSON.stringify(message.content ?? '');
+    return { role: 'user', content: `[orphaned tool result - original call unavailable]: ${content}` };
+  };
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
+    if (m.role === 'tool') {
+      out.push(demoteResult(m));
+      continue;
+    }
+    if (m.role === 'assistant' && m.tool_calls && m.tool_calls.length > 0) {
+      const results: OpenAIMessage[] = [];
+      let next = i + 1;
+      while (next < messages.length && messages[next].role === 'tool') {
+        results.push(messages[next++]);
+      }
+      const resultIds = new Set(results.map(result => result.tool_call_id).filter(Boolean));
+      const ids = new Map<string, string>();
+      const answered: NonNullable<OpenAIMessage['tool_calls']> = [];
+      const unanswered: string[] = [];
+      for (const tc of m.tool_calls) {
+        if (!tc.id || !resultIds.has(tc.id) || ids.has(tc.id)) {
+          unanswered.push(`${tc.function.name} ${tc.function.arguments}`);
+          continue;
+        }
+        let id = tc.id;
+        let suffix = 1;
+        while (usedIds.has(id)) id = `${tc.id}_history_${suffix++}`;
+        usedIds.add(id);
+        ids.set(tc.id, id);
+        answered.push(id === tc.id ? tc : { ...tc, id });
+      }
+      const { tool_calls: _calls, ...plain } = m;
+      let content = m.content;
+      if (unanswered.length > 0) {
+        const note = `[Unanswered historical tool calls: ${unanswered.join('; ')}]`;
+        content = Array.isArray(content)
+          ? [...content, { type: 'text', text: note }]
+          : [content, note].filter(Boolean).join('\n');
+      }
+      out.push({ ...plain, content, ...(answered.length > 0 ? { tool_calls: answered } : {}) });
+      const emitted = new Set<string>();
+      const orphans: OpenAIMessage[] = [];
+      for (const result of results) {
+        const id = result.tool_call_id;
+        const resolved = id ? ids.get(id) : undefined;
+        if (resolved && !emitted.has(resolved)) {
+          emitted.add(resolved);
+          out.push(resolved === id ? result : { ...result, tool_call_id: resolved });
+        } else {
+          orphans.push(demoteResult(result));
+        }
+      }
+      // Keep required results contiguous before adding any demoted text.
+      out.push(...orphans);
+      i = next - 1;
+      continue;
+    }
+    out.push(m);
+  }
+  return out;
+}
+
+/**
  * Debug trace of tool-call/result linkage per request (LOG_LEVEL=debug).
  * Compact one-liner per historical pair plus pending (result-less) calls,
  * with result byte sizes and a short preview. This is how repeat-loop

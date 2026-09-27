@@ -716,3 +716,39 @@ test('T2: normalizeToolCall preserves toolAction/toolSummary (IDE requires them)
     toolCapabilityRegistry.setDynamicTools(null);
   }
 });
+
+test('T2: request-scoped registry is isolated from overlapping requests', () => {
+  const requestRegistry = new ToolCapabilityRegistry();
+  requestRegistry.setDynamicTools({
+    list_dir: {
+      description: 'List files',
+      parameters: {
+        type: 'object',
+        properties: {
+          DirectoryPath: { type: 'string' },
+          toolSummary: { type: 'string' },
+          toolAction: { type: 'string' },
+        },
+        required: ['DirectoryPath', 'toolSummary', 'toolAction'],
+      },
+    },
+  });
+
+  // Simulate a concurrent checkpoint request replacing the legacy singleton
+  // while the agent request is waiting for its provider stream.
+  toolCapabilityRegistry.setDynamicTools(null);
+  const result = normalizeToolCall(
+    'list_dir',
+    {
+      AbsolutePath: '/tmp',
+      toolSummary: 'List /tmp',
+      toolAction: 'list',
+    },
+    requestRegistry,
+  );
+
+  assert.equal(result.args.DirectoryPath, '/tmp');
+  assert.equal(result.args.toolSummary, 'List /tmp');
+  assert.equal(result.args.toolAction, 'list');
+  assert.ok(!(result.warnings || []).some((w) => w.includes('stripped')));
+});

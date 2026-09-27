@@ -9,7 +9,7 @@ import { config } from './config.js';
 import { logger } from './logger.js';
 import { validateApiKey } from './auth.js';
 import { streamResponse, saveReasoning, injectReasoning, extractConvId, reloadRouter, getRouter } from './engine.js';
-import { mapContentsToMessages, mapTools, mapGenerationConfig } from './mapper.js';
+import { mapContentsToMessages, mapTools, mapGenerationConfig, sanitizeToolPairs } from './mapper.js';
 import { requestStore } from './request-store.js';
 import { createDashboardHandler } from './dashboard.js';
 import * as db from './db.js';
@@ -420,6 +420,11 @@ async function handleStreamGenerate(req: http2.Http2ServerRequest, res: http2.Ht
     mapped.messages = compacted.messages;
     logger.info(`[compaction] Context compacted: ${mapped.messages.length} messages`);
   }
+
+  // Defensive: strip orphan tool outputs that survive any path (compaction
+  // tail slicing, loop-guard collapsing, client retries). Strict providers
+  // 400 on `function_call_output` without a matching `function_call`.
+  mapped.messages = sanitizeToolPairs(mapped.messages);
 
   // Calculate actual tokens being sent to provider (post-stripping + post-injection)
   const actualPromptText = JSON.stringify({ system: mapped.system, messages: mapped.messages, tools: mapped.tools });

@@ -5,7 +5,7 @@ import { modelResolver } from './models.js';
 import { reload as reloadReasoningEffort } from './reasoning-effort.js';
 import { ANTIGRAVITY_CONTEXT } from './antigravity-context.js';
 import { registerBuiltinPlugins } from './plugins/builtin-plugins.js';
-import { toolCapabilityRegistry } from './tool-capabilities.js';
+import { ToolCapabilityRegistry } from './tool-capabilities.js';
 import { normalizeToolCall } from './tool-normalizer.js';
 import type { MappedRequest } from './mapper.js';
 import type { OpenAIMessage } from './mapper.js';
@@ -126,14 +126,20 @@ export function reloadRouter(): void {
  * ("missing properties 'toolSummary', 'toolAction'") and nothing
  * re-injects them — stripping caused an infinite identical-retry loop.
  */
-function normalizeToolArgs(args: Record<string, unknown>, toolName: string): Record<string, unknown> {
-  if (!args || Object.keys(args).length === 0) return args;
-
-  const result = normalizeToolCall(toolName, args);
+function normalizeProviderToolCall(
+  args: Record<string, unknown>,
+  toolName: string,
+  registry: ToolCapabilityRegistry,
+): ReturnType<typeof normalizeToolCall> {
+  const result = normalizeToolCall(toolName, args, registry);
   if (result.warnings) {
     logger.info(`[normalizer] ${result.warnings.join('; ')}`);
   }
-  return result.args;
+  const missing = result.warnings?.filter(warning => warning.startsWith('Missing required') && warning.includes('no default'));
+  if (missing?.length) {
+    throw new Error(`Invalid tool call ${result.name}: ${missing.join('; ')}`);
+  }
+  return result;
 }
 
 export type StreamResponseChunk =
@@ -150,18 +156,20 @@ export async function* streamResponse(
   const model = modelId || 'default';
   const r = getRouter();
   const providerIds = config.providerPriority;
+  // Tool schemas are request data. Keep them in a request-local registry so
+  // overlapping agent/checkpoint requests cannot replace one another's
+  // schemas while their provider streams are still in flight.
+  const requestToolRegistry = new ToolCapabilityRegistry();
+  requestToolRegistry.setDynamicTools(mapped.tools);
 
-    logger.info(`Intercept: ${model}`, {
-      messageCount: mapped.messages.length,
-      hasTools: !!mapped.tools && Object.keys(mapped.tools).length > 0,
-      hasSystem: !!mapped.system,
-      contextStripMode: config.contextStripMode,
-    });
+  logger.info(`Intercept: ${model}`, {
+    messageCount: mapped.messages.length,
+    hasTools: !!mapped.tools && Object.keys(mapped.tools).length > 0,
+    hasSystem: !!mapped.system,
+    contextStripMode: config.contextStripMode,
+  });
 
   try {
-    // Sync per-request tools into the capability registry for normalization
-    toolCapabilityRegistry.setDynamicTools(mapped.tools);
-
     const gen = r.execute(providerIds, model, mapped.messages, mapped.tools as any, {
       maxTokens: mapped.maxTokens,
       temperature: mapped.temperature,
@@ -180,7 +188,14 @@ export async function* streamResponse(
         yield { type: 'thought', content: chunk.content || '', provider: prov, resolvedModel: rmodel, sessionId: sid };
       } else if (chunk.type === 'tool-call') {
         const toolName = chunk.name || 'unknown';
-        yield { type: 'tool-call', name: toolName, args: normalizeToolArgs(chunk.args || {}, toolName), provider: prov, resolvedModel: rmodel };
+        const normalized = normalizeProviderToolCall(chunk.args || {}, toolName, requestToolRegistry);
+        yield {
+          type: 'tool-call',
+          name: normalized.name,
+          args: normalized.args,
+          provider: prov,
+          resolvedModel: rmodel,
+        };
       } else if (chunk.type === 'attempt') {
         // A4: surface router's attempt events to the dashboard so failover
         // telemetry is visible. The downstream consumer in index.ts already

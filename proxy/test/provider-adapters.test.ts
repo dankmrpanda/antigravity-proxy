@@ -231,10 +231,12 @@ test('A4: serializeMessages normalizes null content to empty string', () => {
   const adapter = new OpenAICompatAdapter('go', 'http://go', 'k');
   const out = (adapter as any).serializeMessages([
     { role: 'assistant', content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'x', arguments: '{}' } }] },
+    { role: 'tool', tool_call_id: 'c1', content: 'done' },
     { role: 'user', content: 'hi' },
   ]);
   assert.equal(out[0].content, '', 'null content must become empty string (strict gateways reject null)');
-  assert.equal(out[1].content, 'hi');
+  assert.equal(out[1].tool_call_id, 'c1');
+  assert.equal(out[2].content, 'hi');
 });
 
 test('A4: All provider adapters set model and stream:true', () => {

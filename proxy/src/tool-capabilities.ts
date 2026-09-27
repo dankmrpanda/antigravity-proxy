@@ -577,7 +577,7 @@ export class ToolCapabilityRegistry {
   /** Aliases → canonical name */
   private aliasMap = new Map<string, string>();
 
-  /** Per-request dynamic tools (merged on each request) */
+  /** Dynamic tools scoped to this registry instance */
   private dynamicTools = new Map<string, ToolSchema>();
 
   constructor() {
@@ -653,8 +653,8 @@ export class ToolCapabilityRegistry {
   }
 
   /**
-   * Merge per-request tools into the registry.
-   * These complement but do not override well-known tools.
+   * Replace the dynamic tools in this registry instance.
+   * Dynamic schemas take precedence over well-known schemas with the same name.
    */
   setDynamicTools(tools: Record<string, CoreTool> | null | undefined): void {
     this.dynamicTools.clear();

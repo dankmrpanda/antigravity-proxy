@@ -8,6 +8,7 @@
 
 import { randomUUID } from 'crypto';
 import type { OpenAIMessage } from '../mapper.js';
+import { sanitizeToolPairs } from '../mapper.js';
 import type { StreamChunk, ModelAdapter } from './types.js';
 import { poolFetch } from '../http-pool.js';
 import { logger } from '../logger.js';
@@ -18,7 +19,7 @@ export function toResponsesInput(messages: OpenAIMessage[], system?: string): { 
   const systemTexts: string[] = [];
   if (system) systemTexts.push(system);
   const input: any[] = [];
-  for (const m of messages) {
+  for (const m of sanitizeToolPairs(messages)) {
     if (m.role === 'system') {
       if (typeof m.content === 'string' && m.content) systemTexts.push(m.content);
       continue;
@@ -26,7 +27,7 @@ export function toResponsesInput(messages: OpenAIMessage[], system?: string): { 
     if (m.role === 'tool') {
       input.push({
         type: 'function_call_output',
-        call_id: m.tool_call_id || '',
+        call_id: m.tool_call_id,
         output: typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? ''),
       });
       continue;
@@ -113,10 +114,7 @@ export function handleResponsesEvent(event: any): StreamChunk[] {
     case 'response.output_item.done': {
       const item = event.item;
       if (item?.type === 'function_call') {
-        let args: Record<string, unknown> = {};
-        try {
-          args = parseToolArgs(item.arguments || '{}');
-        } catch { /* keep empty */ }
+        const args = parseToolArgs(item.arguments || '{}', true);
         return [{ type: 'tool-call', name: item.name || 'unknown', args }];
       }
       return [];
@@ -141,10 +139,7 @@ export function responsesObjectToChunks(data: any): StreamChunk[] {
         if ((part.type === 'output_text') && part.text) chunks.push({ type: 'text', content: part.text });
       }
     } else if (item?.type === 'function_call') {
-      let args: Record<string, unknown> = {};
-      try {
-        args = parseToolArgs(item.arguments || '{}');
-      } catch { /* keep empty */ }
+      const args = parseToolArgs(item.arguments || '{}', true);
       chunks.push({ type: 'tool-call', name: item.name || 'unknown', args });
     }
   }

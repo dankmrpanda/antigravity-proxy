@@ -1,9 +1,14 @@
-export function parseToolArgs(raw: string | object | null | undefined): Record<string, unknown> {
-  if (raw === null || raw === undefined) return {};
-  if (typeof raw === 'object') return raw as Record<string, unknown>;
+export function parseToolArgs(raw: string | object | null | undefined, strict = false): Record<string, unknown> {
+  let parsed: unknown;
   try {
-    return JSON.parse(raw);
+    parsed = raw === null || raw === undefined || raw === ''
+      ? {} : typeof raw === 'object' ? raw : JSON.parse(raw);
   } catch {
+    if (strict) throw new Error('Invalid tool arguments: incomplete or malformed JSON');
     return {};
   }
+  if (strict && (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed))) {
+    throw new Error('Invalid tool arguments: expected a JSON object');
+  }
+  return parsed as Record<string, unknown>;
 }

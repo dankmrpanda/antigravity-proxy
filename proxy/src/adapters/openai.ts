@@ -1,4 +1,5 @@
 import type { OpenAIMessage } from '../mapper.js';
+import { sanitizeToolPairs } from '../mapper.js';
 import type { StreamChunk, ModelAdapter } from './types.js';
 import { poolFetch } from '../http-pool.js';
 import { getEffortForModel } from '../reasoning-effort.js';
@@ -179,6 +180,9 @@ export class OpenAICompatAdapter implements ModelAdapter {
               if (tc.function?.arguments) buf.arguments += tc.function.arguments;
             }
           }
+          if (choice.finish_reason === 'length' && toolCallBuffers.size > 0) {
+            throw new Error('Tool call truncated by output token limit; increase maxOutputTokens');
+          }
           if (choice.finish_reason === 'tool_calls') {
             for (const [, buf] of toolCallBuffers) {
               yield { type: 'tool-call', name: buf.name || 'unknown', args: this.parseToolArgs(buf.arguments) };
@@ -233,7 +237,7 @@ export class OpenAICompatAdapter implements ModelAdapter {
   }
 
   protected serializeMessages(messages: OpenAIMessage[]): any[] {
-    return messages.map(m => {
+    return sanitizeToolPairs(messages).map(m => {
       const out: any = { role: m.role };
       if (Array.isArray(m.content)) {
         const cleaned = m.content.map((part: any) => {
@@ -292,6 +296,6 @@ export class OpenAICompatAdapter implements ModelAdapter {
   }
 
   protected parseToolArgs(raw: string): Record<string, unknown> {
-    return parseToolArgs(raw);
+    return parseToolArgs(raw, true);
   }
 }

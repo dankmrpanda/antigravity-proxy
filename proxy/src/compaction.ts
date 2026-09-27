@@ -1,6 +1,7 @@
 import { logger } from './logger.js';
 import { estimateMessageTokens, estimateSystemTokens, estimateToolTokens } from './token-estimator.js';
 import type { OpenAIMessage, MappedRequest } from './mapper.js';
+import { sanitizeToolPairs } from './mapper.js';
 import type { Router } from './router.js';
 import { config } from './config.js';
 import { getContextWindow } from './context-windows.js';
@@ -51,18 +52,53 @@ export function selectMessagesToCompact(
   messages: OpenAIMessage[],
   tailTurns: number = DEFAULT_TAIL_TURNS,
 ): { toCompact: OpenAIMessage[]; toPreserve: OpenAIMessage[] } {
-  // Each turn is a user + assistant pair (2 messages)
+  // Each turn is a user + assistant pair (2 messages) — but tool-heavy
+  // histories interleave assistant(tool_calls) + tool(result) groups, so a
+  // naive slice can cut mid-group. Cutting mid-group leaves an orphan tool
+  // output in toPreserve whose assistant call was compacted away, which
+  // strict providers (Responses `function_call_output.call_id`) reject with
+  // 400 ("No function call found for function call output ...").
   const preserveCount = tailTurns * 2;
   if (messages.length <= preserveCount) {
     return { toCompact: [], toPreserve: messages };
   }
-  const toPreserve = messages.slice(-preserveCount);
-  const toCompact = messages.slice(0, -preserveCount);
+  let cut = messages.length - preserveCount;
+  // Never start the preserved tail on a tool result — expand backwards to
+  // include its assistant call.
+  while (cut > 0 && messages[cut]?.role === 'tool') {
+    cut--;
+  }
+  // Never leave an assistant tool call dangling at the end of toCompact
+  // (its results would start toPreserve as orphans) — expand the preserved
+  // tail backwards to keep the whole group together.
+  while (
+    cut > 0 &&
+    messages[cut - 1]?.role === 'assistant' &&
+    (messages[cut - 1]?.tool_calls?.length || 0) > 0
+  ) {
+    cut--;
+    while (cut > 0 && messages[cut]?.role === 'tool') {
+      cut--;
+    }
+  }
+  const toPreserve = messages.slice(cut);
+  const toCompact = messages.slice(0, cut);
   return { toCompact, toPreserve };
 }
 
 export function buildSummarizationPrompt(messages: OpenAIMessage[]): string {
   const serialized = messages.map(msg => {
+    if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
+      const calls = msg.tool_calls
+        .map((tc) => `[Tool call: ${tc.function.name} ${tc.function.arguments}]`)
+        .join(' ');
+      const text = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content ?? '');
+      return `[Assistant]: ${text} ${calls}`.trim();
+    }
+    if (msg.role === 'tool') {
+      const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content ?? '');
+      return `[Tool result ${msg.tool_call_id || ''}]: ${content}`;
+    }
     const role = msg.role === 'user' ? '[User]' : '[Assistant]';
     const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
     return `${role}: ${content}`;
@@ -121,19 +157,24 @@ export async function compactIfNeeded(
 
     logger.info(`[compaction] LLM summary obtained (${summary.length} chars)`);
 
+    // The preserved tail can still start with a tool result whose call was
+    // summarized away (e.g. tailTurns lands mid-history) or end with a
+    // dangling call. Sanitize so strict providers never see an orphan.
+    const safePreserve = sanitizeToolPairs(toPreserve);
     const compactedMessages: OpenAIMessage[] = [
       { role: 'user', content: `[Context compacted]\n${summary}` },
-      ...toPreserve,
+      ...safePreserve,
     ];
 
-    return { ...mapped, messages: compactedMessages };
+    return { ...mapped, messages: sanitizeToolPairs(compactedMessages) };
   } catch (err: any) {
     logger.warn(`[compaction] LLM summarization failed, falling back to truncation: ${err.message}`);
+    const safePreserve = sanitizeToolPairs(toPreserve);
     const fallbackMessages: OpenAIMessage[] = [
       { role: 'user', content: '[Context compacted - earlier conversation truncated]' },
-      ...toPreserve,
+      ...safePreserve,
     ];
-    return { ...mapped, messages: fallbackMessages };
+    return { ...mapped, messages: sanitizeToolPairs(fallbackMessages) };
   }
 }
 

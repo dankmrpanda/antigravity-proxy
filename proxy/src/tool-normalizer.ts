@@ -14,7 +14,7 @@
 
 import { logger } from './logger.js';
 import { toolCapabilityRegistry } from './tool-capabilities.js';
-import type { NormalizedToolCall } from './tool-capabilities.js';
+import type { NormalizedToolCall, ToolCapabilityRegistry } from './tool-capabilities.js';
 
 // ─── Type coercion ─────────────────────────────────────────────────────
 
@@ -111,8 +111,12 @@ function levenshtein(a: string, b: string): number {
  * is used — no fuzzy substring matching, since MCP tool param names are
  * defined by the server and the model is given those exact names.
  */
-function resolveParamName(toolName: string, paramName: string): string {
-  const schema = toolCapabilityRegistry.getSchema(toolName);
+function resolveParamName(
+  registry: ToolCapabilityRegistry,
+  toolName: string,
+  paramName: string,
+): string {
+  const schema = registry.getSchema(toolName);
   if (!schema) return paramName;
 
   // Direct match
@@ -122,7 +126,7 @@ function resolveParamName(toolName: string, paramName: string): string {
 
   // Check if this is a dynamic tool (MCP tools). If so, only do exact
   // case-insensitive matching — no fuzzy substring matching.
-  if (toolCapabilityRegistry.isDynamicTool(toolName)) {
+  if (registry.isDynamicTool(toolName)) {
     for (const [canonical] of Object.entries(schema.params)) {
       if (canonical.toLowerCase() === lower) return canonical;
     }
@@ -133,7 +137,7 @@ function resolveParamName(toolName: string, paramName: string): string {
     // canonical, adopt it instead of stripping a good value (stripping
     // caused infinite model retry loops — the model re-emits what it was
     // taught while the proxy deletes it every turn).
-    const staticSchema = toolCapabilityRegistry.getWellKnownSchema(toolName);
+    const staticSchema = registry.getWellKnownSchema(toolName);
     if (staticSchema) {
       for (const [staticCanonical, def] of Object.entries(staticSchema.params)) {
         const hit =
@@ -191,6 +195,7 @@ function resolveParamName(toolName: string, paramName: string): string {
 export function normalizeToolCall(
   name: string,
   args: Record<string, unknown>,
+  registry: ToolCapabilityRegistry = toolCapabilityRegistry,
 ): NormalizedToolCall {
   // Guard against null/undefined args (can happen with malformed LLM output)
   if (!args || typeof args !== 'object') {
@@ -201,14 +206,14 @@ export function normalizeToolCall(
   let fixed = false;
 
   // Step 1: Resolve tool name
-  const canonicalName = toolCapabilityRegistry.resolveName(name);
+  const canonicalName = registry.resolveName(name);
   if (canonicalName !== name) {
     warnings.push(`Tool name "${name}" → "${canonicalName}"`);
     fixed = true;
   }
 
   // Get schema
-  const schema = toolCapabilityRegistry.getSchema(canonicalName);
+  const schema = registry.getSchema(canonicalName);
   if (!schema) {
     // Unknown tool — pass through without modification
     return { name: canonicalName, args };
@@ -219,7 +224,7 @@ export function normalizeToolCall(
   const seenParams = new Set<string>();
 
   for (const [rawKey, rawValue] of Object.entries(args)) {
-    const canonicalKey = resolveParamName(canonicalName, rawKey);
+    const canonicalKey = resolveParamName(registry, canonicalName, rawKey);
     const paramDef = schema.params[canonicalKey];
 
     if (!paramDef) {
@@ -305,6 +310,7 @@ export function normalizeToolCall(
  */
 export function normalizeToolCalls(
   toolCalls: Array<{ name: string; args: Record<string, unknown> }>,
+  registry: ToolCapabilityRegistry = toolCapabilityRegistry,
 ): Array<{ name: string; args: Record<string, unknown>; warnings?: string[] }> {
-  return toolCalls.map(tc => normalizeToolCall(tc.name, tc.args));
+  return toolCalls.map(tc => normalizeToolCall(tc.name, tc.args, registry));
 }
